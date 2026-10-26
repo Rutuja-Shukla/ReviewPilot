@@ -1,0 +1,6 @@
+{
+  "name": "ReviewPilot",
+  "description": "AI-powered code review and automated testing platform providing deterministic static checks, contextual AI reasoning, test generation, and verified patches.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
