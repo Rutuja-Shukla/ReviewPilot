@@ -138,3 +138,27 @@ export async function exportReview(reviewId: string, format: 'markdown' | 'json'
   a.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export async function reAnalyzeReview(reviewId: string, profile?: ReviewProfile): Promise<Review> {
+  const res = await fetch(`/api/reviews/${reviewId}/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Failed to re-analyze review');
+  return data.review;
+}
+
+export function exportPatch(patchContent: string, fileName = 'fix.patch'): void {
+  const blob = new Blob([patchContent], { type: 'text/x-diff;charset=utf-8' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+

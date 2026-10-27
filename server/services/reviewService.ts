@@ -112,11 +112,37 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
 
   reviewRepository.saveReview(review);
 
+  return runAnalysisPipeline(review, changedLinesMap, startTime);
+}
+
+export async function reAnalyzeReview(reviewId: string, profileOverride?: ReviewProfile): Promise<Review> {
+  const review = reviewRepository.getReviewById(reviewId);
+  if (!review) {
+    throw new Error('Review not found');
+  }
+
+  const startTime = Date.now();
+  if (profileOverride) {
+    review.profile = profileOverride;
+  }
+
+  review.status = 'ANALYZING_STATIC';
+  reviewRepository.saveReview(review);
+
+  const changedLinesMap: Record<string, number[]> = {};
+  return runAnalysisPipeline(review, changedLinesMap, startTime);
+}
+
+async function runAnalysisPipeline(
+  review: Review,
+  changedLinesMap: Record<string, number[]>,
+  startTime: number
+): Promise<Review> {
   // Stage 3: Deterministic Static Analysis
   const staticFindings: ReviewFinding[] = [];
-  for (const file of sourceFiles) {
+  for (const file of review.files) {
     const changedLines = changedLinesMap[file.path];
-    const fileFindings = runStaticAnalysis(file.content, file.path, file.language, reviewId, changedLines);
+    const fileFindings = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
     staticFindings.push(...fileFindings);
   }
 
@@ -125,17 +151,17 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
 
   // Stage 4: AI Contextual Review with Gemini
   const aiFindings: ReviewFinding[] = [];
-  let aiModelUsed = 'gemini-3.8-flash';
+  const aiModelUsed = 'gemini-3.8-flash';
 
-  for (const file of sourceFiles) {
+  for (const file of review.files) {
     try {
       const geminiResult = await analyzeCodeWithGemini({
-        reviewId,
+        reviewId: review.id,
         language: file.language,
-        profile: params.profile,
+        profile: review.profile,
         fileName: file.path,
         sourceCode: file.content,
-        diffText: params.inputType === 'diff' ? params.code : undefined,
+        diffText: file.isDiff ? file.content : undefined,
         changedLines: changedLinesMap[file.path],
       });
       aiFindings.push(...geminiResult.findings);
@@ -147,12 +173,10 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
   // Stage 5: Normalization & Deduplication
   const mergedFindings: ReviewFinding[] = [];
 
-  // Add static findings first
   for (const sf of staticFindings) {
     mergedFindings.push(sf);
   }
 
-  // Merge AI findings, deduplicating if overlapping on same line & category
   for (const af of aiFindings) {
     const duplicate = mergedFindings.find(
       (existing) =>
@@ -162,7 +186,6 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
     );
 
     if (duplicate) {
-      // Elevate confidence, merge evidence, mark as STATICALLY_CONFIRMED
       duplicate.confidence = Math.max(duplicate.confidence, af.confidence);
       duplicate.evidence = Array.from(new Set([...duplicate.evidence, ...af.evidence]));
       if (!duplicate.suggestedPatch && af.suggestedPatch) {
@@ -174,7 +197,6 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
     }
   }
 
-  // Sort by severity priority: CRITICAL > HIGH > MEDIUM > LOW > INFORMATIONAL
   const severityRank: Record<string, number> = {
     CRITICAL: 5,
     HIGH: 4,

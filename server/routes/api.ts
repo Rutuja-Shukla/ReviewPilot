@@ -1,11 +1,56 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { reviewRepository } from '../repositories/reviewRepository.js';
-import { createAndExecuteReview } from '../services/reviewService.js';
+import { createAndExecuteReview, reAnalyzeReview } from '../services/reviewService.js';
 import { generateTestForFinding } from '../ai/geminiTestService.js';
 import { executeTestInSandbox, CURRENT_SANDBOX_CAPABILITY } from '../sandbox/sandboxAdapter.js';
 import { runEvaluationSuite } from '../evaluation/evaluationRunner.js';
 
 export const apiRouter = Router();
+
+const CreateReviewSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  language: z.enum(['typescript', 'javascript', 'python', 'java', 'csharp']),
+  profile: z.enum([
+    'BUG_DETECTION',
+    'SECURITY_REVIEW',
+    'CODE_QUALITY',
+    'PERFORMANCE',
+    'TEST_COVERAGE',
+    'COMPREHENSIVE',
+  ]).optional().default('COMPREHENSIVE'),
+  inputType: z.enum(['snippet', 'diff', 'file']).optional().default('snippet'),
+  code: z.string().min(1, 'Source code or diff is required'),
+  fileName: z.string().optional(),
+});
+
+const ReAnalyzeSchema = z.object({
+  profile: z.enum([
+    'BUG_DETECTION',
+    'SECURITY_REVIEW',
+    'CODE_QUALITY',
+    'PERFORMANCE',
+    'TEST_COVERAGE',
+    'COMPREHENSIVE',
+  ]).optional(),
+});
+
+const UpdateSettingsSchema = z.object({
+  retentionPeriod: z.enum(['session', '24h', '7d', '30d']).optional(),
+  defaultProfile: z.enum([
+    'BUG_DETECTION',
+    'SECURITY_REVIEW',
+    'CODE_QUALITY',
+    'PERFORMANCE',
+    'TEST_COVERAGE',
+    'COMPREHENSIVE',
+  ]).optional(),
+  maxInputSizeBytes: z.number().int().min(1024).max(10 * 1024 * 1024).optional(),
+  modelName: z.string().optional(),
+  sandboxIsolationConfigured: z.boolean().optional(),
+  allowManualVerification: z.boolean().optional(),
+});
 
 // GET /api/reviews - list all reviews
 apiRouter.get('/reviews', (_req: Request, res: Response) => {
@@ -19,27 +64,16 @@ apiRouter.get('/reviews', (_req: Request, res: Response) => {
 
 // POST /api/reviews - create and trigger new review
 apiRouter.post('/reviews', async (req: Request, res: Response) => {
-  try {
-    const { title, description, language, profile, inputType, code, fileName } = req.body;
-
-    if (!code || typeof code !== 'string' || !code.trim()) {
-      return res.status(400).json({ success: false, message: 'Source code or diff is required' });
-    }
-
-    if (!language) {
-      return res.status(400).json({ success: false, message: 'Language is required' });
-    }
-
-    const review = await createAndExecuteReview({
-      title,
-      description,
-      language: language || 'typescript',
-      profile: profile || 'COMPREHENSIVE',
-      inputType: inputType || 'snippet',
-      code,
-      fileName,
+  const parseResult = CreateReviewSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      success: false,
+      message: parseResult.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', '),
     });
+  }
 
+  try {
+    const review = await createAndExecuteReview(parseResult.data);
     res.status(201).json({ success: true, review });
   } catch (error: any) {
     console.error('Failed to create review:', error);
@@ -57,6 +91,27 @@ apiRouter.get('/reviews/:reviewId', (req: Request, res: Response) => {
     res.json({ success: true, review });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error fetching review' });
+  }
+});
+
+// POST /api/reviews/:reviewId/analyze - re-run analysis on existing review
+apiRouter.post('/reviews/:reviewId/analyze', async (req: Request, res: Response) => {
+  const parseResult = ReAnalyzeSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      success: false,
+      message: parseResult.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', '),
+    });
+  }
+
+  try {
+    const review = await reAnalyzeReview(req.params.reviewId, parseResult.data.profile);
+    res.json({ success: true, review });
+  } catch (error: any) {
+    if (error.message === 'Review not found') {
+      return res.status(404).json({ success: false, message: 'Review not found' });
+    }
+    res.status(500).json({ success: false, message: error.message || 'Re-analysis failed' });
   }
 });
 
@@ -286,8 +341,16 @@ apiRouter.get('/settings', (_req: Request, res: Response) => {
 
 // PUT /api/settings - update settings
 apiRouter.put('/settings', (req: Request, res: Response) => {
+  const parseResult = UpdateSettingsSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      success: false,
+      message: parseResult.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', '),
+    });
+  }
+
   try {
-    const updated = reviewRepository.updateSettings(req.body);
+    const updated = reviewRepository.updateSettings(parseResult.data);
     res.json({ success: true, settings: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to update settings' });
