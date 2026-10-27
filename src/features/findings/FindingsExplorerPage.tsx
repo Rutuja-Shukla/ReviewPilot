@@ -9,10 +9,10 @@ import {
   CheckCircle2,
   XCircle,
   HelpCircle,
-  MessageSquare,
-  Sparkles,
   ChevronRight,
   ShieldAlert,
+  ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
 
 interface FindingsExplorerPageProps {
@@ -52,7 +52,6 @@ export const FindingsExplorerPage: React.FC<FindingsExplorerPageProps> = ({
     if (selectedCategory !== 'ALL' && finding.category !== selectedCategory) return false;
     if (finding.confidence < minConfidence) return false;
     if (statusFilter !== 'ALL' && finding.validationStatus !== statusFilter) return false;
-
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       const matchTitle = finding.title.toLowerCase().includes(q);
@@ -61,12 +60,11 @@ export const FindingsExplorerPage: React.FC<FindingsExplorerPageProps> = ({
       const matchReview = review.title.toLowerCase().includes(q);
       if (!matchTitle && !matchDesc && !matchFile && !matchReview) return false;
     }
-
     return true;
   });
 
   // Sort findings
-  const severityRank: Record<string, number> = {
+  const severityOrder: Record<ReviewSeverity, number> = {
     CRITICAL: 5,
     HIGH: 4,
     MEDIUM: 3,
@@ -76,15 +74,31 @@ export const FindingsExplorerPage: React.FC<FindingsExplorerPageProps> = ({
 
   filtered.sort((a, b) => {
     if (sortBy === 'severity') {
-      const diff = (severityRank[b.finding.severity] || 0) - (severityRank[a.finding.severity] || 0);
-      if (diff !== 0) return diff;
-      return b.finding.confidence - a.finding.confidence;
+      return severityOrder[b.finding.severity] - severityOrder[a.finding.severity];
     }
     if (sortBy === 'confidence') {
       return b.finding.confidence - a.finding.confidence;
     }
-    return new Date(b.finding.createdAt).getTime() - new Date(a.finding.createdAt).getTime();
+    return new Date(b.review.createdAt).getTime() - new Date(a.review.createdAt).getTime();
   });
+
+  const handleToggleVerify = async (finding: ReviewFinding, reviewId: string) => {
+    const isCurrentlyVerified = finding.validationStatus === 'MANUALLY_VERIFIED';
+    try {
+      const updated = await updateFindingFeedback(finding.id, reviewId, {
+        verifiedByUser: !isCurrentlyVerified,
+      });
+      const targetReview = reviews.find((r) => r.id === reviewId);
+      if (targetReview) {
+        onRefreshReview({
+          ...targetReview,
+          findings: targetReview.findings.map((f) => (f.id === finding.id ? updated : f)),
+        });
+      }
+    } catch (err: any) {
+      alert(`Feedback error: ${err.message}`);
+    }
+  };
 
   const handleConfirmDismiss = async () => {
     if (!dismissingFinding) return;
@@ -95,235 +109,259 @@ export const FindingsExplorerPage: React.FC<FindingsExplorerPageProps> = ({
         {
           dismissed: true,
           reason: dismissReason,
-          comment: dismissComment,
+          comment: dismissComment.trim() || undefined,
         }
       );
-
       const targetReview = reviews.find((r) => r.id === dismissingFinding.reviewId);
       if (targetReview) {
-        const updatedReview: Review = {
+        onRefreshReview({
           ...targetReview,
-          findings: targetReview.findings.map((f) => (f.id === updated.id ? updated : f)),
-        };
-        onRefreshReview(updatedReview);
+          findings: targetReview.findings.map((f) =>
+            f.id === dismissingFinding.finding.id ? updated : f
+          ),
+        });
       }
       setDismissingFinding(null);
       setDismissComment('');
     } catch (err: any) {
-      alert(`Failed to dismiss finding: ${err.message}`);
-    }
-  };
-
-  const handleRestoreFinding = async (findingId: string, reviewId: string) => {
-    try {
-      const updated = await updateFindingFeedback(findingId, reviewId, {
-        dismissed: false,
-      });
-      const targetReview = reviews.find((r) => r.id === reviewId);
-      if (targetReview) {
-        const updatedReview: Review = {
-          ...targetReview,
-          findings: targetReview.findings.map((f) => (f.id === updated.id ? updated : f)),
-        };
-        onRefreshReview(updatedReview);
-      }
-    } catch (err: any) {
-      alert(`Failed to restore finding: ${err.message}`);
+      alert(`Dismissal failed: ${err.message}`);
     }
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Findings Explorer</h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Search, filter, track developer verification, and record false-positive dismissals across all code reviews.
-        </p>
+    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-4">
+      {/* Page Header */}
+      <div className="pb-3 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight font-sans">
+            Findings Explorer
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Cross-repository triage for AST static defects, Gemini detections, and verified patches.
+          </p>
+        </div>
+        <div className="text-xs font-mono text-slate-500 tabular-nums">
+          Showing {filtered.length} of {allFindingsWithReview.length} findings
+        </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row items-center gap-3">
+      {/* Filter & Control Bar */}
+      <div className="bg-white p-3 rounded border border-slate-200 shadow-2xs space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
           {/* Search Input */}
-          <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="lg:col-span-2 relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
             <input
               type="text"
-              placeholder="Search by title, description, file path, or review..."
+              placeholder="Search findings by title, file, or description..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
-          {/* Sort Selector */}
-          <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
-            <span className="text-xs font-mono text-slate-500 uppercase">Sort by:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none"
-            >
-              <option value="severity">Severity Rank</option>
-              <option value="confidence">Confidence Score</option>
-              <option value="date">Date Detected</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Secondary Filter Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 text-xs font-mono">
+          {/* Severity Filter */}
           <div>
-            <label className="block text-[11px] text-slate-500 uppercase mb-1">Severity</label>
             <select
               value={selectedSeverity}
               onChange={(e) => setSelectedSeverity(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none"
+              className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded font-mono focus:bg-white focus:outline-none"
             >
               <option value="ALL">All Severities</option>
-              <option value="CRITICAL">Critical</option>
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
-              <option value="INFORMATIONAL">Informational</option>
+              <option value="CRITICAL">Critical Only</option>
+              <option value="HIGH">High Only</option>
+              <option value="MEDIUM">Medium Only</option>
+              <option value="LOW">Low Only</option>
+              <option value="INFORMATIONAL">Info Only</option>
             </select>
           </div>
 
+          {/* Category Filter */}
           <div>
-            <label className="block text-[11px] text-slate-500 uppercase mb-1">Category</label>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none"
+              className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded font-mono focus:bg-white focus:outline-none"
             >
               <option value="ALL">All Categories</option>
-              <option value="BUG">Bug</option>
               <option value="SECURITY">Security</option>
-              <option value="CODE_QUALITY">Code Quality</option>
+              <option value="BUG">Bug & Reliability</option>
               <option value="PERFORMANCE">Performance</option>
-              <option value="TEST_COVERAGE">Test Coverage</option>
+              <option value="STYLE">Style & Quality</option>
+              <option value="CONCURRENCY">Concurrency</option>
             </select>
           </div>
 
+          {/* Status Filter */}
           <div>
-            <label className="block text-[11px] text-slate-500 uppercase mb-1">Validation Status</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none"
+              className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded font-mono focus:bg-white focus:outline-none"
             >
               <option value="ALL">All Statuses</option>
+              <option value="UNVERIFIED">Unverified Only</option>
               <option value="STATICALLY_CONFIRMED">Statically Confirmed</option>
               <option value="TEST_CONFIRMED">Test Confirmed</option>
               <option value="MANUALLY_VERIFIED">Manually Verified</option>
-              <option value="UNVERIFIED">Unverified (Hypothesis)</option>
               <option value="DISMISSED">Dismissed</option>
             </select>
           </div>
+        </div>
 
-          <div>
-            <label className="block text-[11px] text-slate-500 uppercase mb-1">
-              Min Confidence: {Math.round(minConfidence * 100)}%
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={minConfidence}
-              onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
-              className="w-full accent-indigo-600 mt-2"
-            />
+        {/* Secondary Bar: Confidence & Sort */}
+        <div className="flex flex-wrap items-center justify-between text-xs pt-1 border-t border-slate-100 gap-2">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-mono text-slate-500 uppercase">Min Confidence:</span>
+            {[0, 0.7, 0.85, 0.95].map((conf) => (
+              <button
+                key={conf}
+                type="button"
+                onClick={() => setMinConfidence(conf)}
+                className={`px-2 py-0.5 text-xs font-mono rounded cursor-pointer transition-colors ${
+                  minConfidence === conf
+                    ? 'bg-indigo-600 text-white font-semibold'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {conf === 0 ? 'Any' : `≥ ${Math.round(conf * 100)}%`}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-slate-500 uppercase">Sort by:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="text-xs bg-slate-50 border border-slate-300 rounded px-2 py-0.5 font-mono focus:outline-none"
+            >
+              <option value="severity">Severity (High to Low)</option>
+              <option value="confidence">Confidence Score</option>
+              <option value="date">Review Date</option>
+            </select>
           </div>
         </div>
       </div>
 
-      {/* Findings Results Table / List */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between text-xs font-mono text-slate-500">
-          <span>SHOWING {filtered.length} FINDINGS</span>
-          <span>FILTERED OUT OF {allFindingsWithReview.length} TOTAL</span>
-        </div>
-
+      {/* High-Density Findings Table */}
+      <div className="bg-white border border-slate-200 rounded shadow-2xs overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">
-            <HelpCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-semibold text-slate-800">No matching findings found</p>
-            <p className="text-xs text-slate-500 mt-1">Try broadening your search or adjusting the filter criteria.</p>
+          <div className="p-12 text-center text-slate-400 space-y-2">
+            <ShieldAlert className="w-8 h-8 text-slate-300 mx-auto" />
+            <div className="text-xs">No findings match the selected criteria.</div>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedSeverity('ALL');
+                setSelectedCategory('ALL');
+                setStatusFilter('ALL');
+                setMinConfidence(0);
+              }}
+              className="text-xs text-indigo-600 hover:underline cursor-pointer"
+            >
+              Reset all filters
+            </button>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {filtered.map(({ finding, review }) => (
-              <div
-                key={finding.id}
-                className="p-5 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4"
-              >
-                <div className="space-y-2 min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SeverityBadge severity={finding.severity} size="sm" />
-                    <DetectionSourceBadge source={finding.detectionSource} />
-                    <ValidationStatusBadge status={finding.validationStatus} />
-                    <span className="text-xs font-mono text-slate-500">
-                      Confidence: {Math.round(finding.confidence * 100)}%
-                    </span>
-                  </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs divide-y divide-slate-200">
+              <thead className="bg-slate-50 text-[11px] font-mono text-slate-500 uppercase tracking-wider select-none">
+                <tr>
+                  <th className="px-3.5 py-2.5 font-semibold w-24">Severity</th>
+                  <th className="px-3 py-2.5 font-semibold">Defect & Category</th>
+                  <th className="px-3 py-2.5 font-semibold">File & Location</th>
+                  <th className="px-3 py-2.5 font-semibold">Detection Source</th>
+                  <th className="px-3 py-2.5 font-semibold">Validation Status</th>
+                  <th className="px-3 py-2.5 font-semibold text-right">Confidence</th>
+                  <th className="px-3.5 py-2.5 font-semibold text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-sans">
+                {filtered.map(({ finding, review }) => {
+                  const isVerified = finding.validationStatus === 'MANUALLY_VERIFIED';
+                  const isDismissed = finding.validationStatus === 'DISMISSED';
 
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900 hover:text-indigo-600 transition-colors">
-                      {finding.title}
-                    </h3>
-                    <p className="text-xs text-slate-600 line-clamp-2 mt-0.5">
-                      {finding.description}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-500">
-                    <span className="text-slate-700 font-semibold">{finding.filePath}:{finding.startLine}</span>
-                    <span>•</span>
-                    <span>Review: {review.title}</span>
-                    <span>•</span>
-                    <span>Category: {finding.category}</span>
-                  </div>
-
-                  {finding.developerFeedback?.dismissed && (
-                    <div className="p-2 rounded bg-slate-100 border border-slate-200 text-xs font-mono text-slate-600 flex items-center gap-2">
-                      <XCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>
-                        Dismissed ({finding.developerFeedback.reason || 'No reason specified'}): {finding.developerFeedback.comment || 'No comment provided'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                  {finding.validationStatus === 'DISMISSED' ? (
-                    <button
-                      onClick={() => handleRestoreFinding(finding.id, review.id)}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors"
+                  return (
+                    <tr
+                      key={finding.id}
+                      onClick={() => onOpenWorkspaceFinding(review.id, finding.id)}
+                      className="hover:bg-slate-50/80 cursor-pointer transition-colors group"
                     >
-                      Restore Finding
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setDismissingFinding({ finding, reviewId: review.id })}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50 transition-colors"
-                    >
-                      Dismiss...
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => onOpenWorkspaceFinding(review.id, finding.id)}
-                    className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors flex items-center gap-1 shadow-xs"
-                  >
-                    <span>Inspect</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+                      <td className="px-3.5 py-2.5">
+                        <SeverityBadge severity={finding.severity} size="sm" />
+                      </td>
+                      <td className="px-3 py-2.5 min-w-[240px]">
+                        <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                          {finding.title}
+                        </div>
+                        <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                          {finding.category} · In review: <span className="text-slate-700">{review.title}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-slate-600 text-[11px] whitespace-nowrap">
+                        <div>{finding.filePath}</div>
+                        <div className="text-slate-400 text-[10px] tabular-nums">
+                          Lines {finding.startLine}–{finding.endLine || finding.startLine}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <DetectionSourceBadge source={finding.detectionSource} />
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <ValidationStatusBadge status={finding.validationStatus} />
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-slate-700">
+                        {Math.round(finding.confidence * 100)}%
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVerify(finding, review.id)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-medium border cursor-pointer ${
+                              isVerified
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                            title="Mark verified"
+                          >
+                            {isVerified ? 'Verified' : 'Verify'}
+                          </button>
+                          {!isDismissed ? (
+                            <button
+                              type="button"
+                              onClick={() => setDismissingFinding({ finding, reviewId: review.id })}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium border bg-white text-slate-500 border-slate-200 hover:bg-slate-50 cursor-pointer"
+                              title="Dismiss finding"
+                            >
+                              Dismiss
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmDismiss()}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium border bg-slate-100 text-slate-600 border-slate-200 cursor-pointer"
+                            >
+                              Restore
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onOpenWorkspaceFinding(review.id, finding.id)}
+                            className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer"
+                            title="Open in Workspace"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -331,56 +369,71 @@ export const FindingsExplorerPage: React.FC<FindingsExplorerPageProps> = ({
       {/* Dismissal Reason Modal */}
       {dismissingFinding && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">
-              Dismiss Finding
-            </h3>
-            <p className="text-xs text-slate-600">
-              Record engineer feedback regarding why this finding is dismissed. Dismissals are tracked and do not delete the finding from audit logs.
-            </p>
+          <div className="bg-white rounded border border-slate-300 shadow-xl max-w-md w-full p-5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">
+                Dismiss Finding
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDismissingFinding(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-mono cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1 font-mono uppercase text-[11px]">
-                  Dismissal Reason
-                </label>
-                <select
-                  value={dismissReason}
-                  onChange={(e) => setDismissReason(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-mono focus:outline-none"
-                >
-                  <option value="FALSE_POSITIVE">False Positive (Analyzer mistake)</option>
-                  <option value="ACCEPTED_RISK">Accepted Risk (Business trade-off)</option>
-                  <option value="INTENDED_BEHAVIOR">Intended Behavior (Expected design)</option>
-                  <option value="OUT_OF_SCOPE">Out of Scope (Addressed in separate PR)</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
+            <div className="text-xs text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-900">
+                {dismissingFinding.finding.title}
+              </p>
+              <p className="text-[11px] font-mono text-slate-400">
+                {dismissingFinding.finding.filePath}:{dismissingFinding.finding.startLine}
+              </p>
+            </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1 font-mono uppercase text-[11px]">
-                  Engineer Comment (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={dismissComment}
-                  onChange={(e) => setDismissComment(e.target.value)}
-                  placeholder="e.g. Input is already validated upstream in gateway middleware..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-mono text-xs focus:outline-none"
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase">
+                Triage Reason:
+              </label>
+              <select
+                value={dismissReason}
+                onChange={(e) => setDismissReason(e.target.value as any)}
+                className="w-full text-xs bg-slate-50 border border-slate-300 rounded p-2 font-mono focus:bg-white focus:outline-none"
+              >
+                <option value="FALSE_POSITIVE">False Positive (Analyzer Inaccuracy)</option>
+                <option value="INTENDED_BEHAVIOR">Intended Engineering Behavior</option>
+                <option value="ACCEPTED_RISK">Accepted Risk / Compensating Controls</option>
+                <option value="OUT_OF_SCOPE">Out of Scope for this Subsystem</option>
+                <option value="OTHER">Other Reason</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-[11px] font-mono font-medium text-slate-700 uppercase">
+                Audit Justification (Optional):
+              </label>
+              <textarea
+                value={dismissComment}
+                onChange={(e) => setDismissComment(e.target.value)}
+                placeholder="Reasoning recorded in audit trail..."
+                rows={3}
+                className="w-full text-xs bg-slate-50 border border-slate-300 rounded p-2 focus:bg-white focus:outline-none"
+              />
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
+                type="button"
                 onClick={() => setDismissingFinding(null)}
-                className="px-3.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded cursor-pointer"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirmDismiss}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-xs"
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded cursor-pointer"
               >
                 Confirm Dismissal
               </button>

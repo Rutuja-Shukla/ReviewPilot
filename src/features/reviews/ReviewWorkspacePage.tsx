@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Review, ReviewFinding, GeneratedTest, TestExecution } from '../../types/review';
 import { SeverityBadge } from '../../components/SeverityBadge';
 import { SourceCodeViewer } from './SourceCodeViewer';
@@ -11,7 +11,7 @@ import {
   Filter,
   Code,
   RotateCcw,
-  Loader2,
+  Search,
 } from 'lucide-react';
 
 interface ReviewWorkspacePageProps {
@@ -29,6 +29,7 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
     review.findings[0]?.id || null
   );
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
+  const [searchFilter, setSearchFilter] = useState<string>('');
   const [copiedPatchId, setCopiedPatchId] = useState<string | null>(null);
   const [isGeneratingTest, setIsGeneratingTest] = useState(false);
   const [isExecutingTest, setIsExecutingTest] = useState(false);
@@ -39,13 +40,20 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
 
   const codeViewerRef = useRef<HTMLDivElement>(null);
 
-  const selectedFinding = review.findings.find((f) => f.id === selectedFindingId);
-
   // Filter findings
   const filteredFindings = review.findings.filter((f) => {
-    if (severityFilter === 'ALL') return true;
-    return f.severity === severityFilter;
+    if (severityFilter !== 'ALL' && f.severity !== severityFilter) return false;
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      const matchTitle = f.title.toLowerCase().includes(q);
+      const matchDesc = f.description.toLowerCase().includes(q);
+      const matchLine = f.startLine.toString().includes(q);
+      if (!matchTitle && !matchDesc && !matchLine) return false;
+    }
+    return true;
   });
+
+  const selectedFinding = review.findings.find((f) => f.id === selectedFindingId) || filteredFindings[0];
 
   // Source file for current view
   const activeFile = review.files[0] || {
@@ -77,7 +85,38 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
         lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
-  }, [selectedFindingId]);
+  }, [selectedFindingId, selectedFinding]);
+
+  // Keyboard navigation: j (next finding), k (previous finding)
+  const handleGlobalKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      // Don't trigger if user is focused inside an input/textarea
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+        return;
+      }
+
+      if (filteredFindings.length === 0) return;
+
+      const currentIndex = filteredFindings.findIndex((f) => f.id === selectedFindingId);
+
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextIndex = currentIndex < filteredFindings.length - 1 ? currentIndex + 1 : 0;
+        setSelectedFindingId(filteredFindings[nextIndex].id);
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : filteredFindings.length - 1;
+        setSelectedFindingId(filteredFindings[prevIndex].id);
+      }
+    },
+    [filteredFindings, selectedFindingId]
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleGlobalKeyDown]);
 
   const handleCopyPatch = (patch: string, id: string) => {
     navigator.clipboard.writeText(patch);
@@ -199,37 +238,35 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
   return (
     <div className="flex flex-col h-[calc(100vh-1px)] overflow-hidden bg-slate-100">
       {/* Top Workspace Action Bar */}
-      <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-900 text-sm truncate">
-              {review.title}
-            </span>
-            <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 uppercase">
-              {review.language}
-            </span>
-            <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-              {review.profile.replace('_', ' ')}
-            </span>
-          </div>
-          <div className="hidden md:flex items-center gap-2 text-xs font-mono text-slate-400">
-            <span>•</span>
-            <span>{review.stats.totalFindings} findings</span>
-            <span>•</span>
-            <span>{review.analysisTimeMs ? `${review.analysisTimeMs}ms` : 'Completed'}</span>
+      <header className="h-12 bg-white border-b border-slate-200 px-4 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="font-semibold text-slate-900 text-xs truncate max-w-xs md:max-w-md font-sans">
+            {review.title}
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+            {review.language}
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+            {review.profile.replace('_', ' ')}
+          </span>
+          <div className="hidden lg:flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
+            <span>·</span>
+            <span className="tabular-nums">{review.findings.length} findings</span>
+            <span>·</span>
+            <span className="tabular-nums">{review.analysisTimeMs ? `${review.analysisTimeMs}ms` : 'Completed'}</span>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={handleReAnalyze}
             disabled={isReAnalyzing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
             title="Re-run static checks & Gemini analysis"
           >
-            <RotateCcw className={`w-3.5 h-3.5 ${isReAnalyzing ? 'animate-spin' : ''}`} />
+            <RotateCcw className={`w-3 h-3 ${isReAnalyzing ? 'animate-spin' : ''}`} />
             <span>Re-analyze</span>
           </button>
 
@@ -237,21 +274,21 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
             type="button"
             onClick={() => handleExport('md')}
             disabled={exportingFormat !== null}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
             title="Export review report as Markdown"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Markdown</span>
+            <Download className="w-3 h-3" />
+            <span>Markdown</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleExport('json')}
             disabled={exportingFormat !== null}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
             title="Export review record as JSON"
           >
-            <Code className="w-3.5 h-3.5" />
+            <Code className="w-3 h-3" />
             <span>JSON</span>
           </button>
         </div>
@@ -270,59 +307,71 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
           totalFindingsCount={review.findings.length}
         />
 
-        {/* Right: Findings List & Finding Details Panel */}
-        <div className="w-[520px] flex flex-col bg-white border-l border-slate-200 overflow-hidden shrink-0">
-          {/* Severity Filter Header */}
-          <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 font-semibold text-slate-700 font-mono">
-              <Filter className="w-3.5 h-3.5 text-slate-500" />
-              <span>FINDINGS ({filteredFindings.length})</span>
+        {/* Right: Findings List & Detail Panel */}
+        <div className="w-[480px] lg:w-[540px] flex flex-col bg-white border-l border-slate-200 overflow-hidden shrink-0">
+          {/* Findings Filter Bar with Search & Severity */}
+          <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Filter findings..."
+                className="w-full text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-sans focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
             </div>
             <select
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="text-xs bg-white border border-slate-300 rounded px-2 py-1 font-mono focus:outline-none"
+              className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-mono focus:outline-none shrink-0"
             >
               <option value="ALL">All Severities</option>
-              <option value="CRITICAL">Critical Only</option>
-              <option value="HIGH">High Only</option>
-              <option value="MEDIUM">Medium Only</option>
-              <option value="LOW">Low Only</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
             </select>
           </div>
 
-          {/* Compact Findings Accordion List */}
-          <div className="h-52 overflow-y-auto border-b border-slate-200 divide-y divide-slate-100">
-            {filteredFindings.map((finding) => {
-              const isSelected = selectedFindingId === finding.id;
-              return (
-                <div
-                  key={finding.id}
-                  onClick={() => setSelectedFindingId(finding.id)}
-                  className={`p-3 cursor-pointer transition-all flex items-start justify-between gap-2 ${
-                    isSelected
-                      ? 'bg-indigo-50/70 border-l-4 border-indigo-600'
-                      : 'hover:bg-slate-50/80'
-                  }`}
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <SeverityBadge severity={finding.severity} size="sm" />
-                      <span className="text-xs font-mono text-slate-500">
-                        Line {finding.startLine}
-                      </span>
+          {/* High-Density Findings List */}
+          <div className="h-48 overflow-y-auto border-b border-slate-200 divide-y divide-slate-100 select-none">
+            {filteredFindings.length === 0 ? (
+              <div className="p-4 text-center text-xs text-slate-400">
+                No findings match the current filter.
+              </div>
+            ) : (
+              filteredFindings.map((finding) => {
+                const isSelected = selectedFinding?.id === finding.id;
+                return (
+                  <div
+                    key={finding.id}
+                    onClick={() => setSelectedFindingId(finding.id)}
+                    className={`p-2.5 cursor-pointer transition-colors flex items-start justify-between gap-2 ${
+                      isSelected
+                        ? 'bg-indigo-50/80 border-l-3 border-indigo-600'
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <SeverityBadge severity={finding.severity} size="sm" />
+                        <span className="text-[11px] font-mono text-slate-500 tabular-nums">
+                          Line {finding.startLine}
+                        </span>
+                      </div>
+                      <div className={`text-xs truncate ${isSelected ? 'text-indigo-950 font-semibold' : 'text-slate-800 font-medium'}`}>
+                        {finding.title}
+                      </div>
                     </div>
-                    <div className={`text-xs font-medium truncate ${isSelected ? 'text-indigo-950 font-semibold' : 'text-slate-800'}`}>
-                      {finding.title}
-                    </div>
+                    <ChevronRight className={`w-3.5 h-3.5 shrink-0 mt-1 transition-transform ${isSelected ? 'text-indigo-600 translate-x-0.5' : 'text-slate-400'}`} />
                   </div>
-                  <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-indigo-600 translate-x-0.5' : 'text-slate-400'}`} />
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
 
-          {/* Finding Detail Panel */}
+          {/* Selected Finding Detail Panel */}
           {selectedFinding ? (
             <FindingDetailPanel
               finding={selectedFinding}
@@ -340,9 +389,9 @@ export const ReviewWorkspacePage: React.FC<ReviewWorkspacePageProps> = ({
               testResult={testResult}
             />
           ) : (
-            <div className="flex-1 p-8 text-center text-slate-400 flex flex-col items-center justify-center">
+            <div className="flex-1 p-6 text-center text-slate-400 flex flex-col items-center justify-center">
               <FileCheck className="w-8 h-8 text-slate-300 mb-2" />
-              <p className="text-xs">Select a finding from the list above or click a marked line in the code viewer.</p>
+              <p className="text-xs">Select a finding above or click an anchored line in the source viewer.</p>
             </div>
           )}
         </div>

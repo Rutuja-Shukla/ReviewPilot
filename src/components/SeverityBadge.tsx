@@ -1,6 +1,6 @@
 import React from 'react';
 import { ReviewSeverity } from '../types/review';
-import { ShieldAlert, AlertCircle, AlertTriangle, Info, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 
 interface SeverityBadgeProps {
   severity: ReviewSeverity;
@@ -14,48 +14,48 @@ export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity, size = '
     case 'CRITICAL':
       return (
         <span
-          className={`inline-flex items-center gap-1 font-semibold rounded-md bg-rose-50 border border-rose-200 text-rose-700 ${
-            isSm ? 'px-1.5 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
+          className={`inline-flex items-center gap-1 font-mono font-semibold uppercase tracking-wider rounded border text-rose-700 bg-rose-50 border-rose-200 ${
+            isSm ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'
           }`}
-          title="Critical severity: immediate remediation recommended"
+          title="Critical severity: immediate remediation required"
         >
-          <ShieldAlert className={isSm ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          <ShieldAlert className={isSm ? 'w-2.5 h-2.5 shrink-0' : 'w-3 h-3 shrink-0'} />
           CRITICAL
         </span>
       );
     case 'HIGH':
       return (
         <span
-          className={`inline-flex items-center gap-1 font-semibold rounded-md bg-orange-50 border border-orange-200 text-orange-700 ${
-            isSm ? 'px-1.5 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
+          className={`inline-flex items-center gap-1 font-mono font-semibold uppercase tracking-wider rounded border text-orange-700 bg-orange-50 border-orange-200 ${
+            isSm ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'
           }`}
           title="High severity: significant bug or security risk"
         >
-          <AlertCircle className={isSm ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          <AlertCircle className={isSm ? 'w-2.5 h-2.5 shrink-0' : 'w-3 h-3 shrink-0'} />
           HIGH
         </span>
       );
     case 'MEDIUM':
       return (
         <span
-          className={`inline-flex items-center gap-1 font-medium rounded-md bg-amber-50 border border-amber-200 text-amber-700 ${
-            isSm ? 'px-1.5 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
+          className={`inline-flex items-center gap-1 font-mono font-medium uppercase tracking-wider rounded border text-amber-800 bg-amber-50 border-amber-200 ${
+            isSm ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'
           }`}
           title="Medium severity: quality or performance issue"
         >
-          <AlertTriangle className={isSm ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          <AlertTriangle className={isSm ? 'w-2.5 h-2.5 shrink-0' : 'w-3 h-3 shrink-0'} />
           MEDIUM
         </span>
       );
     case 'LOW':
       return (
         <span
-          className={`inline-flex items-center gap-1 font-medium rounded-md bg-blue-50 border border-blue-200 text-blue-700 ${
-            isSm ? 'px-1.5 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
+          className={`inline-flex items-center gap-1 font-mono font-medium uppercase tracking-wider rounded border text-sky-700 bg-sky-50 border-sky-200 ${
+            isSm ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'
           }`}
-          title="Low severity: minor improvement or style"
+          title="Low severity: style or minor improvement"
         >
-          <Info className={isSm ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          <Info className={isSm ? 'w-2.5 h-2.5 shrink-0' : 'w-3 h-3 shrink-0'} />
           LOW
         </span>
       );
@@ -63,12 +63,12 @@ export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity, size = '
     default:
       return (
         <span
-          className={`inline-flex items-center gap-1 font-medium rounded-md bg-slate-100 border border-slate-200 text-slate-700 ${
-            isSm ? 'px-1.5 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
+          className={`inline-flex items-center gap-1 font-mono font-medium uppercase tracking-wider rounded border text-slate-600 bg-slate-100 border-slate-200 ${
+            isSm ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'
           }`}
           title="Informational observation"
         >
-          <CheckCircle2 className={isSm ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          <CheckCircle2 className={isSm ? 'w-2.5 h-2.5 shrink-0' : 'w-3 h-3 shrink-0'} />
           INFO
         </span>
       );
