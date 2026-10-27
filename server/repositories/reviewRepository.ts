@@ -314,14 +314,23 @@ describe('handleUserQuery SQL Injection vulnerability test', () => {
         testId: 'test-seed-01',
         findingId: 'finding-sec-02',
         reviewId: demoId,
-        status: 'PASSED',
-        executionTimeMs: 64,
-        stdout: `[ReviewPilot Sandbox: VITEST]\n✓ handleUserQuery SQL Injection vulnerability test > should escape malicious quote characters\nTest Files  1 passed (1)\nTests  1 passed (1)\nDuration  64ms\nSandbox: Isolated Node.js AST & Syntax Validator active`,
+        status: 'SANDBOX_RESTRICTED',
+        executionTimeMs: 16,
+        stdout: `[ReviewPilot AST Sandbox: VITEST]
+✓ Syntax compilation: SUCCESS (Target: TYPESCRIPT)
+✓ Scope analyzed: Function "handleUserQuery"
+✓ Test intent: Defect reproduction
+✓ AST Safety Audit: Clean (No forbidden process, network, or filesystem calls)
+⚠ SERVER-SIDE EXECUTION DISABLED BY SECURITY POLICY
+  Host Isolation Status: MicroVM / hypervisor sandbox container is not provisioned on this host.
+  Security Policy: Untrusted code is never executed inside the application server process.
+  Safe Alternative: Use "Copy Code" or "Export" to execute this test suite within your isolated local runner or CI/CD container.`,
         stderr: '',
+        failureExplanation: 'Server-side execution disabled by security policy (microVM isolation not present on host). Test syntax is valid and ready for export.',
         sandboxInfo: {
-          isIsolated: true,
-          runtime: 'Isolated Node.js AST & Syntax Validator',
-          isolationMechanism: 'Static AST Verification + Process Isolation Policy',
+          isIsolated: false,
+          runtime: 'ReviewPilot Safe AST Syntax Validator (esbuild)',
+          isolationMechanism: 'Server-side execution disabled by security policy (microVM isolation not present). Untrusted code execution is strictly prohibited inside the application server.',
         },
         executedAt: new Date(Date.now() - 3350000).toISOString(),
       },
@@ -358,7 +367,7 @@ describe('handleUserQuery SQL Injection vulnerability test', () => {
         lowCount: 0,
         infoCount: 0,
         staticallyConfirmedCount: 3,
-        testConfirmedCount: 1,
+        testConfirmedCount: 0,
         dismissedCount: 0,
         testsGeneratedCount: 1,
       },

@@ -2,6 +2,8 @@ import { parseGitDiff } from '../analyzers/diffParser.js';
 import { runStaticAnalysis } from '../analyzers/staticAnalyzer.js';
 import { analyzeCodeWithGemini } from '../ai/geminiReviewService.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
+import { sanitizeFilePath } from '../security/pathValidator.js';
+import { validateAndSanitizePatch } from '../analyzers/patchValidator.js';
 import {
   Review,
   ReviewFinding,
@@ -20,16 +22,26 @@ export interface CreateReviewParams {
   fileName?: string;
 }
 
+const MAX_INPUT_LINES = 20000;
+
 export async function createAndExecuteReview(params: CreateReviewParams): Promise<Review> {
   const startTime = Date.now();
   const reviewId = `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const title = params.title?.trim() || `${params.language.toUpperCase()} ${params.inputType.toUpperCase()} Review`;
-  const fileName = params.fileName || (params.language === 'python' ? 'app.py' : params.language === 'java' ? 'App.java' : params.language === 'csharp' ? 'Program.cs' : 'src/index.ts');
+  
+  // Sanitize input file name against path traversal
+  const defaultFileName = params.language === 'python' ? 'app.py' : params.language === 'java' ? 'App.java' : params.language === 'csharp' ? 'Program.cs' : 'src/index.ts';
+  const cleanFileName = sanitizeFilePath(params.fileName, defaultFileName);
 
-  // Input validation
+  // Input validation - Size and line limits to guard against DoS
   const settings = reviewRepository.getSettings();
   if (params.code.length > settings.maxInputSizeBytes) {
     throw new Error(`Input size (${params.code.length} bytes) exceeds limit of ${settings.maxInputSizeBytes} bytes`);
+  }
+
+  const linesCount = params.code.split(/\r?\n/).length;
+  if (linesCount > MAX_INPUT_LINES) {
+    throw new Error(`Input exceeds maximum line limit of ${MAX_INPUT_LINES} lines (received ${linesCount})`);
   }
 
   let sourceFiles: SourceFile[] = [];
@@ -59,7 +71,7 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
         {
           id: 'file-1',
           reviewId,
-          path: fileName,
+          path: cleanFileName,
           content: params.code,
           language: params.language,
           isDiff: true,
@@ -73,11 +85,11 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
       {
         id: 'file-1',
         reviewId,
-        path: fileName,
+        path: cleanFileName,
         content: params.code,
         language: params.language,
         isDiff: false,
-        changesCount: { additions: params.code.split('\n').length, deletions: 0 },
+        changesCount: { additions: linesCount, deletions: 0 },
       },
     ];
   }
@@ -143,6 +155,14 @@ async function runAnalysisPipeline(
   for (const file of review.files) {
     const changedLines = changedLinesMap[file.path];
     const fileFindings = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
+    
+    // Validate patches on static findings
+    for (const f of fileFindings) {
+      if (f.suggestedPatch) {
+        const patchCheck = validateAndSanitizePatch(f.suggestedPatch, f.filePath);
+        f.suggestedPatch = patchCheck.isValid ? patchCheck.sanitizedPatch : null;
+      }
+    }
     staticFindings.push(...fileFindings);
   }
 
@@ -274,4 +294,3 @@ export function deduplicateFindings(
 
   return merged;
 }
-

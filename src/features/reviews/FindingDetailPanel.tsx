@@ -279,8 +279,14 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
             {testResult && (
               <div className="p-2 rounded bg-slate-900 border border-slate-800 font-mono text-[10px] text-slate-300 space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className={`font-semibold ${testResult.status === 'PASSED' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {testResult.status} ({testResult.executionTimeMs}ms)
+                  <span className={`font-semibold ${
+                    testResult.status === 'PASSED'
+                      ? 'text-emerald-400'
+                      : testResult.status === 'SANDBOX_RESTRICTED'
+                      ? 'text-amber-400'
+                      : 'text-rose-400'
+                  }`}>
+                    {testResult.status === 'SANDBOX_RESTRICTED' ? 'SANDBOX_RESTRICTED (Safe Mode)' : testResult.status} ({testResult.executionTimeMs}ms)
                   </span>
                   <span className="text-slate-400">{testResult.sandboxInfo.runtime}</span>
                 </div>

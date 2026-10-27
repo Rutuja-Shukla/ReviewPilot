@@ -99,9 +99,9 @@ export const TestLabPage: React.FC<TestLabPageProps> = ({ reviews, onRefreshRevi
             Targeted unit test suites generated to isolate, reproduce, and verify remediation for reported defects.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>AST Safe Sandbox: Active</span>
+        <div className="flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+          <ShieldCheck className="w-4 h-4 text-amber-600" />
+          <span>AST Safe Sandbox: Execution Disabled (Isolation Enforced)</span>
         </div>
       </div>
 
@@ -281,14 +281,20 @@ export const TestLabPage: React.FC<TestLabPageProps> = ({ reviews, onRefreshRevi
                     <div className="space-y-2">
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                         <span className={`font-semibold flex items-center gap-1.5 ${
-                          latestExecution.status === 'PASSED' ? 'text-emerald-400' : 'text-rose-400'
+                          latestExecution.status === 'PASSED'
+                            ? 'text-emerald-400'
+                            : latestExecution.status === 'SANDBOX_RESTRICTED'
+                            ? 'text-amber-400'
+                            : 'text-rose-400'
                         }`}>
                           {latestExecution.status === 'PASSED' ? (
                             <CheckCircle2 className="w-4 h-4" />
+                          ) : latestExecution.status === 'SANDBOX_RESTRICTED' ? (
+                            <ShieldAlert className="w-4 h-4 text-amber-400" />
                           ) : (
                             <XCircle className="w-4 h-4" />
                           )}
-                          Status: {latestExecution.status} ({latestExecution.executionTimeMs}ms)
+                          Status: {latestExecution.status === 'SANDBOX_RESTRICTED' ? 'SANDBOX_RESTRICTED (Safe Mode)' : latestExecution.status} ({latestExecution.executionTimeMs}ms)
                         </span>
                         <span className="text-[11px] text-slate-500">
                           {latestExecution.sandboxInfo.isolationMechanism}

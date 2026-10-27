@@ -1,3 +1,5 @@
+import { sanitizeFilePath } from '../security/pathValidator.js';
+
 export interface DiffHunk {
   oldStart: number;
   oldCount: number;
@@ -23,12 +25,20 @@ export interface ParsedDiffFile {
   fullOldContent?: string;
 }
 
+const MAX_DIFF_FILES = 50;
+const MAX_HUNKS_PER_FILE = 500;
+const MAX_DIFF_LINES = 25000;
+
 export function parseGitDiff(diffText: string): ParsedDiffFile[] {
   if (!diffText || !diffText.trim()) {
     return [];
   }
 
   const lines = diffText.split(/\r?\n/);
+  if (lines.length > MAX_DIFF_LINES) {
+    throw new Error(`Git diff exceeds maximum limit of ${MAX_DIFF_LINES} lines (received ${lines.length})`);
+  }
+
   const files: ParsedDiffFile[] = [];
   let currentFile: ParsedDiffFile | null = null;
   let currentHunk: DiffHunk | null = null;
@@ -40,14 +50,23 @@ export function parseGitDiff(diffText: string): ParsedDiffFile[] {
 
     // Diff header: diff --git a/path b/path
     if (line.startsWith('diff --git')) {
+      if (files.length >= MAX_DIFF_FILES) {
+        break; // Guard against unbounded file diff bombs
+      }
+
       if (currentFile) {
         if (currentHunk) currentFile.hunks.push(currentHunk);
         files.push(finalizeDiffFile(currentFile));
       }
       currentHunk = null;
       const parts = line.split(' ');
-      const oldPath = parts[2]?.replace(/^a\//, '') || 'unknown';
-      const newPath = parts[3]?.replace(/^b\//, '') || oldPath;
+      const rawOldPath = parts[2]?.replace(/^a\//, '') || 'unknown';
+      const rawNewPath = parts[3]?.replace(/^b\//, '') || rawOldPath;
+
+      // Sanitize paths to protect against directory traversal
+      const oldPath = sanitizeFilePath(rawOldPath, 'source-old');
+      const newPath = sanitizeFilePath(rawNewPath, 'source-new');
+
       currentFile = {
         oldPath,
         newPath,
@@ -62,14 +81,16 @@ export function parseGitDiff(diffText: string): ParsedDiffFile[] {
 
     // --- a/path or +++ b/path
     if (line.startsWith('--- ')) {
-      if (currentFile && !currentFile.oldPath) {
-        currentFile.oldPath = line.substring(4).replace(/^a\//, '').trim();
+      if (currentFile && (!currentFile.oldPath || currentFile.oldPath === 'source-old')) {
+        const rawOld = line.substring(4).replace(/^a\//, '').trim();
+        currentFile.oldPath = sanitizeFilePath(rawOld, 'source-old');
       }
       continue;
     }
     if (line.startsWith('+++ ')) {
-      if (currentFile && (!currentFile.newPath || currentFile.newPath === 'unknown')) {
-        currentFile.newPath = line.substring(4).replace(/^b\//, '').trim();
+      if (currentFile && (!currentFile.newPath || currentFile.newPath === 'source-new')) {
+        const rawNew = line.substring(4).replace(/^b\//, '').trim();
+        currentFile.newPath = sanitizeFilePath(rawNew, 'source-new');
       }
       continue;
     }
@@ -88,7 +109,9 @@ export function parseGitDiff(diffText: string): ParsedDiffFile[] {
         };
       }
       if (currentHunk) {
-        currentFile.hunks.push(currentHunk);
+        if (currentFile.hunks.length < MAX_HUNKS_PER_FILE) {
+          currentFile.hunks.push(currentHunk);
+        }
       }
 
       const match = line.match(/@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)/);
@@ -148,8 +171,10 @@ export function parseGitDiff(diffText: string): ParsedDiffFile[] {
     }
   }
 
-  if (currentFile) {
-    if (currentHunk) currentFile.hunks.push(currentHunk);
+  if (currentFile && files.length < MAX_DIFF_FILES) {
+    if (currentHunk && currentFile.hunks.length < MAX_HUNKS_PER_FILE) {
+      currentFile.hunks.push(currentHunk);
+    }
     files.push(finalizeDiffFile(currentFile));
   }
 

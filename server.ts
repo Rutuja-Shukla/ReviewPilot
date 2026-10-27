@@ -1,9 +1,10 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/routes/api.js';
+import { sanitizeErrorMessage } from './server/security/secretScrubber.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,8 +15,18 @@ async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
   app.use(cors());
-  app.use(express.json({ limit: '15mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+  // Set security response headers
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
+  // Limit body sizes to 5MB to protect against oversized payload DoS
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
   // Mount API endpoints
   app.use('/api', apiRouter);
@@ -27,6 +38,16 @@ async function startServer() {
       app: 'ReviewPilot',
       version: '1.0.0',
       timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Global error handler - catches JSON parse errors or unhandled exceptions without leaking stack or secrets
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const statusCode = err.status || err.statusCode || 500;
+    const safeMessage = sanitizeErrorMessage(err, 'Request processing failed');
+    res.status(statusCode).json({
+      success: false,
+      message: safeMessage,
     });
   });
 
@@ -52,6 +73,6 @@ async function startServer() {
 }
 
 startServer().catch((err) => {
-  console.error('Fatal error starting ReviewPilot server:', err);
+  console.error('Fatal error starting ReviewPilot server:', sanitizeErrorMessage(err));
   process.exit(1);
 });
