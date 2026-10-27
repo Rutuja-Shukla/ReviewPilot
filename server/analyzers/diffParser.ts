@@ -157,15 +157,24 @@ export function parseGitDiff(diffText: string): ParsedDiffFile[] {
 }
 
 function finalizeDiffFile(file: ParsedDiffFile): ParsedDiffFile {
-  // Reconstruct full content of the modified file based on hunks
+  // Reconstruct full content of the modified file based on hunks, aligning line numbers
   const newContentLines: string[] = [];
+  let currentLine = 1;
+
   for (const hunk of file.hunks) {
+    while (currentLine < hunk.newStart) {
+      newContentLines.push('');
+      currentLine++;
+    }
+
     for (const l of hunk.lines) {
       if (l.type === 'add' || l.type === 'context') {
         newContentLines.push(l.content);
+        currentLine++;
       }
     }
   }
+
   file.fullNewContent = newContentLines.join('\n');
   return file;
 }

@@ -227,8 +227,33 @@ export const STATIC_RULES: StaticRule[] = [
     description: 'Property is accessed on a potentially null or undefined variable without null check or optional chaining (?.).',
     impact: 'Causes runtime "Cannot read properties of undefined/null" TypeError and application crash.',
     recommendedFix: 'Use optional chaining (?.) or an explicit guard (if (!obj) return;).',
-    match: (line, lineIndex) => {
-      if (/(?:user|data|res|item|config|order)\.[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+/i.test(line) && !line.includes('?.') && !line.includes('typeof') && !line.includes('import') && !line.includes('export')) {
+    match: (line, lineIndex, allLines) => {
+      // Skip if line already uses optional chaining, typeof, instanceof, import, export
+      if (line.includes('?.') || line.includes('typeof ') || line.includes('instanceof ') || line.includes('import ') || line.startsWith('export interface') || line.startsWith('export type')) {
+        return null;
+      }
+
+      // Check if preceding 5 lines already guard against null/undefined
+      const prevLines = allLines.slice(Math.max(0, lineIndex - 5), lineIndex);
+      const isGuarded = prevLines.some((l) =>
+        l.includes('if (!') ||
+        l.includes('if (') ||
+        l.includes('if(') ||
+        l.includes('&&') ||
+        l.includes('??') ||
+        l.includes('assert')
+      );
+      if (isGuarded) {
+        return null;
+      }
+
+      // Skip common safe method chains on strings/arrays (e.g. .trim(), .toLowerCase(), .slice(), .toString())
+      const safeMethods = /\.(?:trim|toLowerCase|toUpperCase|slice|substr|substring|toString|replace|replaceAll|split|join|map|filter|forEach|reduce|find|some|every)\s*\(/;
+      if (safeMethods.test(line)) {
+        return null;
+      }
+
+      if (/(?:user|data|res|item|config|order)\.[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+/i.test(line)) {
         if (line.includes('=') || line.includes('(') || line.includes('return')) {
           return {
             matched: true,
@@ -236,12 +261,12 @@ export const STATIC_RULES: StaticRule[] = [
             startLine: lineIndex + 1,
             endLine: lineIndex + 1,
             codeExcerpt: line.trim(),
-            suggestedPatch: null
+            suggestedPatch: null,
           };
         }
       }
       return null;
-    }
+    },
   },
 
   // BUG-003: Unhandled Promise Rejection

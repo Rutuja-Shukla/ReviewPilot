@@ -145,28 +145,53 @@ Return your review as a JSON object with this exact structure:
     }
 
     const parsedData = validated.data;
-    const findings: ReviewFinding[] = parsedData.findings.map((f, idx) => ({
-      id: `ai-${ctx.reviewId}-${idx + 1}-${Date.now().toString(36)}`,
-      reviewId: ctx.reviewId,
-      title: f.title,
-      category: f.category,
-      severity: f.severity,
-      confidence: Math.round(f.confidence * 100) / 100,
-      filePath: f.filePath || ctx.fileName,
-      startLine: f.startLine || 1,
-      endLine: f.endLine || f.startLine || 1,
-      codeExcerpt: f.codeExcerpt || '',
-      description: f.description,
-      impact: f.impact,
-      evidence: f.evidence && f.evidence.length > 0 ? f.evidence : ['Code analysis identified pattern violating review profile criteria.'],
-      recommendedFix: f.recommendedFix,
-      suggestedPatch: f.suggestedPatch || null,
-      detectionSource: 'AI_ANALYSIS',
-      validationStatus: 'UNVERIFIED',
-      introducedByChange: f.introducedByChange ?? true,
-      relatedFindingIds: [],
-      createdAt: new Date().toISOString(),
-    }));
+    const sourceLines = ctx.sourceCode.split(/\r?\n/);
+    const totalLines = Math.max(1, sourceLines.length);
+    const changedSet = ctx.changedLines && ctx.changedLines.length > 0 ? new Set(ctx.changedLines) : null;
+
+    const findings: ReviewFinding[] = parsedData.findings.map((f, idx) => {
+      // Validate and clamp line numbers to real source boundaries
+      const rawStart = typeof f.startLine === 'number' ? f.startLine : 1;
+      const rawEnd = typeof f.endLine === 'number' ? f.endLine : rawStart;
+      const startLine = Math.max(1, Math.min(rawStart, totalLines));
+      const endLine = Math.max(startLine, Math.min(rawEnd, totalLines));
+
+      // Extract actual source code excerpt from source code if missing or placeholder
+      let codeExcerpt = f.codeExcerpt?.trim();
+      if (!codeExcerpt || codeExcerpt.length === 0) {
+        codeExcerpt = sourceLines.slice(startLine - 1, endLine).join('\n').trim();
+      }
+
+      // Accurately determine if finding was introduced by diff changes
+      const isIntroduced = changedSet
+        ? Array.from({ length: endLine - startLine + 1 }, (_, i) => startLine + i).some((line) => changedSet.has(line))
+        : (f.introducedByChange ?? true);
+
+      return {
+        id: `ai-${ctx.reviewId}-${idx + 1}-${Date.now().toString(36)}`,
+        reviewId: ctx.reviewId,
+        title: f.title.trim(),
+        category: f.category,
+        severity: f.severity,
+        confidence: Math.round(Math.min(1, Math.max(0, f.confidence)) * 100) / 100,
+        filePath: f.filePath || ctx.fileName,
+        startLine,
+        endLine,
+        codeExcerpt,
+        description: f.description.trim(),
+        impact: f.impact.trim(),
+        evidence: f.evidence && f.evidence.length > 0
+          ? f.evidence
+          : [`Pattern identified on lines ${startLine}-${endLine} violating ${ctx.profile} guidelines.`],
+        recommendedFix: f.recommendedFix.trim(),
+        suggestedPatch: f.suggestedPatch || null,
+        detectionSource: 'AI_ANALYSIS',
+        validationStatus: 'UNVERIFIED',
+        introducedByChange: isIntroduced,
+        relatedFindingIds: [],
+        createdAt: new Date().toISOString(),
+      };
+    });
 
     return {
       summary: parsedData.summary,

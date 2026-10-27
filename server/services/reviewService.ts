@@ -171,31 +171,7 @@ async function runAnalysisPipeline(
   }
 
   // Stage 5: Normalization & Deduplication
-  const mergedFindings: ReviewFinding[] = [];
-
-  for (const sf of staticFindings) {
-    mergedFindings.push(sf);
-  }
-
-  for (const af of aiFindings) {
-    const duplicate = mergedFindings.find(
-      (existing) =>
-        existing.filePath === af.filePath &&
-        Math.abs(existing.startLine - af.startLine) <= 1 &&
-        (existing.category === af.category || existing.title.toLowerCase().includes(af.category.toLowerCase()))
-    );
-
-    if (duplicate) {
-      duplicate.confidence = Math.max(duplicate.confidence, af.confidence);
-      duplicate.evidence = Array.from(new Set([...duplicate.evidence, ...af.evidence]));
-      if (!duplicate.suggestedPatch && af.suggestedPatch) {
-        duplicate.suggestedPatch = af.suggestedPatch;
-      }
-      duplicate.validationStatus = 'STATICALLY_CONFIRMED';
-    } else {
-      mergedFindings.push(af);
-    }
-  }
+  const mergedFindings = deduplicateFindings(staticFindings, aiFindings);
 
   const severityRank: Record<string, number> = {
     CRITICAL: 5,
@@ -217,3 +193,85 @@ async function runAnalysisPipeline(
 
   return review;
 }
+
+export function deduplicateFindings(
+  staticFindings: ReviewFinding[],
+  aiFindings: ReviewFinding[]
+): ReviewFinding[] {
+  const merged: ReviewFinding[] = [...staticFindings];
+
+  const domainKeywords = [
+    ['sql', 'inject', 'query'],
+    ['secret', 'key', 'token', 'credential', 'password'],
+    ['eval', 'exec', 'function', 'dynamic'],
+    ['traversal', 'path', 'directory'],
+    ['prompt', 'instruction', 'override'],
+    ['cors', 'origin', 'credential'],
+    ['assign', 'condition', 'equality'],
+    ['null', 'undefined', 'dereference', 'optional'],
+    ['promise', 'await', 'rejection', 'async'],
+    ['leak', 'stream', 'handle', 'resource', 'close'],
+    ['loop', 'bound', 'length', 'off-by-one'],
+    ['catch', 'swallow', 'exception', 'empty'],
+    ['n+1', 'database', 'iteration'],
+    ['complexity', 'nested', 'find', 'filter'],
+  ];
+
+  for (const af of aiFindings) {
+    const duplicate = merged.find((existing) => {
+      if (existing.filePath !== af.filePath) return false;
+
+      // Line proximity or interval overlap
+      const linesOverlap =
+        Math.max(existing.startLine, af.startLine) <= Math.min(existing.endLine, af.endLine) + 1 ||
+        Math.abs(existing.startLine - af.startLine) <= 2;
+
+      if (!linesOverlap) return false;
+
+      // Direct category match
+      if (existing.category === af.category) return true;
+
+      // Category in title or vice versa
+      const existingTitle = existing.title.toLowerCase();
+      const afTitle = af.title.toLowerCase();
+      if (existingTitle.includes(af.category.toLowerCase()) || afTitle.includes(existing.category.toLowerCase())) {
+        return true;
+      }
+
+      // Semantic keyword intersection
+      const existingText = `${existingTitle} ${existing.description.toLowerCase()}`;
+      const afText = `${afTitle} ${af.description.toLowerCase()}`;
+
+      for (const group of domainKeywords) {
+        const matchesExisting = group.some((kw) => existingText.includes(kw));
+        const matchesAi = group.some((kw) => afText.includes(kw));
+        if (matchesExisting && matchesAi) {
+          return true;
+        }
+      }
+
+      return false;
+    });
+
+    if (duplicate) {
+      // Dual confirmation elevates confidence
+      duplicate.confidence = Math.min(0.99, Math.max(duplicate.confidence, af.confidence, 0.95));
+      duplicate.evidence = Array.from(new Set([...duplicate.evidence, ...af.evidence]));
+      if (!duplicate.suggestedPatch && af.suggestedPatch) {
+        duplicate.suggestedPatch = af.suggestedPatch;
+      }
+      duplicate.validationStatus = 'STATICALLY_CONFIRMED';
+      if (!duplicate.relatedFindingIds.includes(af.id)) {
+        duplicate.relatedFindingIds.push(af.id);
+      }
+    } else {
+      // AI finding retains pure AI source and UNVERIFIED status until tested/reviewed
+      af.detectionSource = 'AI_ANALYSIS';
+      af.validationStatus = 'UNVERIFIED';
+      merged.push(af);
+    }
+  }
+
+  return merged;
+}
+
