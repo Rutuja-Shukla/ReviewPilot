@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { SupportedLanguage, ReviewProfile, Review } from '../../types/review';
 import { createReview } from '../../lib/api';
+import { detectLanguage } from '../../utils/languageDetector';
 import {
   FileCode,
   GitPullRequest,
@@ -191,6 +192,11 @@ export const NewReviewPage: React.FC<NewReviewPageProps> = ({ onReviewCreated })
       const content = event.target?.result as string;
       setCodeContent(content);
       setErrorMessage(null);
+
+      const detected = detectLanguage({ fileName: file.name, code: content });
+      if (detected) {
+        setLanguage(detected);
+      }
     };
     reader.readAsText(file);
   };

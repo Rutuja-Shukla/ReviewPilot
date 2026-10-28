@@ -63,7 +63,7 @@ export const STATIC_RULES: StaticRule[] = [
     impact: 'Allows an attacker to alter the query logic, bypass authentication, exfiltrate sensitive database records, or drop tables.',
     recommendedFix: 'Use parameterized queries (e.g., db.query("SELECT * FROM users WHERE id = $1", [id])) or an ORM with proper query binding.',
     match: (line, lineIndex) => {
-      const sqlConcat = line.match(/(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE).*?\+\s*(?:req\.|params|input|id|user|query|name|userInput)/i) ||
+      const sqlConcat = line.match(/(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE).*?\+\s*(?:[a-zA-Z0-9_$]*?(?:req|param|input|id|user|query|name|val)[a-zA-Z0-9_$]*|req\.)/i) ||
                         line.match(/(?:execute|query|rawQuery)\s*\(\s*`.*?(?:SELECT|INSERT|UPDATE|DELETE).*?\$\{.*?\}\s*`/i) ||
                         line.match(/(?:execute|query|cursor\.execute)\s*\(\s*f['"].*?(?:SELECT|INSERT|UPDATE|DELETE).*?\{.*?\}/i);
       if (sqlConcat) {
@@ -200,7 +200,7 @@ export const STATIC_RULES: StaticRule[] = [
     impact: 'The condition will always evaluate to truthiness of the assigned value and overwrite the variable unintentionally.',
     recommendedFix: 'Replace single equals assignment (=) with strict equality comparison (===).',
     match: (line, lineIndex) => {
-      const match = line.match(/\bif\s*\(\s*([a-zA-Z0-9_$]+)\s*=\s*([^=][^)]*)\)/);
+      const match = line.match(/\bif\s*\(\s*([a-zA-Z0-9_$.]+)\s*=\s*([^=][^)]*)\)/);
       if (match && !line.includes('===') && !line.includes('==') && !line.includes('!=')) {
         const varName = match[1];
         const val = match[2];

@@ -29,7 +29,7 @@ const CreateReviewSchema = z.object({
     'COMPREHENSIVE',
   ]).optional().default('COMPREHENSIVE'),
   inputType: z.enum(['snippet', 'diff', 'file']).optional().default('snippet'),
-  code: z.string().min(1, 'Source code or diff is required').max(1024 * 1024, 'Payload exceeds 1MB limit'),
+  code: z.string().trim().min(1, 'Source code or diff is required').max(1024 * 1024, 'Payload exceeds 1MB limit'),
   fileName: z.string().max(255).optional(),
 });
 

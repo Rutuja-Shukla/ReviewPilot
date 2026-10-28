@@ -11,6 +11,7 @@ import {
   SourceFile,
   SupportedLanguage,
 } from '../../src/types/review.js';
+import { isSupportedLanguage } from '../../src/utils/languageDetector.js';
 
 export interface CreateReviewParams {
   title?: string;
@@ -32,6 +33,15 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
   // Sanitize input file name against path traversal
   const defaultFileName = params.language === 'python' ? 'app.py' : params.language === 'java' ? 'App.java' : params.language === 'csharp' ? 'Program.cs' : 'src/index.ts';
   const cleanFileName = sanitizeFilePath(params.fileName, defaultFileName);
+
+  // Input validation - Empty code and supported language checks
+  if (!params.code || params.code.trim().length === 0) {
+    throw new Error('Source code or diff is required');
+  }
+
+  if (!isSupportedLanguage(params.language)) {
+    throw new Error(`Unsupported language: ${String(params.language)}`);
+  }
 
   // Input validation - Size and line limits to guard against DoS
   const settings = reviewRepository.getSettings();
