@@ -12,6 +12,7 @@ import {
   SupportedLanguage,
 } from '../../src/types/review.js';
 import { isSupportedLanguage } from '../../src/utils/languageDetector.js';
+import { languageAdapterRegistry } from '../adapters/languages/index.js';
 
 export interface CreateReviewParams {
   title?: string;
@@ -30,8 +31,9 @@ export async function createAndExecuteReview(params: CreateReviewParams): Promis
   const reviewId = `rev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
   const title = params.title?.trim() || `${params.language.toUpperCase()} ${params.inputType.toUpperCase()} Review`;
   
-  // Sanitize input file name against path traversal
-  const defaultFileName = params.language === 'python' ? 'app.py' : params.language === 'java' ? 'App.java' : params.language === 'csharp' ? 'Program.cs' : 'src/index.ts';
+  // Sanitize input file name against path traversal using adapter default filename
+  const adapter = languageAdapterRegistry.getAdapterOrNull(params.language);
+  const defaultFileName = adapter?.defaultFileName || 'src/index.ts';
   const cleanFileName = sanitizeFilePath(params.fileName, defaultFileName);
 
   // Input validation - Empty code and supported language checks

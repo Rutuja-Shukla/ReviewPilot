@@ -1,5 +1,5 @@
 import { GeneratedTest, TestExecution } from '../../src/types/review.js';
-import * as esbuild from 'esbuild';
+import { languageAdapterRegistry } from '../adapters/languages/index.js';
 
 export interface SandboxCapability {
   available: boolean;
@@ -21,8 +21,8 @@ export interface SandboxCapability {
 export const CURRENT_SANDBOX_CAPABILITY: SandboxCapability = {
   available: false,
   executionDisabled: true,
-  runtime: 'ReviewPilot Safe AST Syntax Validator (esbuild)',
-  supportedLanguages: ['typescript', 'javascript', 'python', 'java', 'csharp'],
+  runtime: 'ReviewPilot Safe AST Syntax Validator (Multi-Language Registry)',
+  supportedLanguages: languageAdapterRegistry.getSupportedLanguages(),
   maxExecutionTimeMs: 3000,
   networkAccess: 'DISABLED',
   isolationMechanism: 'Server-side execution disabled by security policy (microVM isolation not present). Untrusted code execution is strictly prohibited inside the application server.',
@@ -34,10 +34,13 @@ export const CURRENT_SANDBOX_CAPABILITY: SandboxCapability = {
 export function validateTestCodeSafety(code: string, language: string): {
   isSafe: boolean;
   syntaxValid: boolean;
+  securityViolations: string[];
+  syntaxErrors: string[];
   errors: string[];
   warnings: string[];
 } {
-  const errors: string[] = [];
+  const securityViolations: string[] = [];
+  const syntaxErrors: string[] = [];
   const warnings: string[] = [];
 
   // Check for dangerous operations within test code
@@ -54,47 +57,33 @@ export function validateTestCodeSafety(code: string, language: string): {
 
   for (const { pattern, msg } of dangerousPatterns) {
     if (pattern.test(code)) {
-      errors.push(msg);
+      securityViolations.push(msg);
     }
   }
 
-  // Real compilation validation with esbuild for TypeScript and JavaScript (Safe static parsing, NO execution)
+  // Safe AST / syntax validation delegated to language adapter
   let syntaxValid = true;
-  if (language === 'typescript' || language === 'javascript') {
-    try {
-      const loader = language === 'typescript' ? 'ts' : 'js';
-      const result = esbuild.transformSync(code, {
-        loader,
-        target: 'es2022',
-        format: 'esm',
-      });
-      if (result.warnings && result.warnings.length > 0) {
-        for (const w of result.warnings) {
-          warnings.push(`Line ${w.location?.line || '?'}: ${w.text}`);
-        }
-      }
-    } catch (err: any) {
+  const adapter = languageAdapterRegistry.getAdapterOrNull(language);
+  if (adapter) {
+    const syntaxResult = adapter.validateSyntax(code);
+    if (!syntaxResult.valid) {
       syntaxValid = false;
-      const parseError = err.errors?.[0]?.text || err.message || 'Syntax parse failed';
-      const errorLine = err.errors?.[0]?.location?.line;
-      errors.push(errorLine ? `Line ${errorLine}: ${parseError}` : parseError);
+      syntaxErrors.push(...syntaxResult.errors);
+    }
+    if (syntaxResult.warnings && syntaxResult.warnings.length > 0) {
+      warnings.push(...syntaxResult.warnings);
     }
   } else {
-    // For Python / Java / C#, verify balanced bracket pairs and presence of test function definitions
-    const openBraces = (code.match(/\{/g) || []).length;
-    const closeBraces = (code.match(/\}/g) || []).length;
-    if (openBraces !== closeBraces && (language === 'java' || language === 'csharp')) {
-      syntaxValid = false;
-      errors.push(`Mismatched curly braces: ${openBraces} open, ${closeBraces} close`);
-    }
-    if (language === 'python' && !code.includes('def test_') && !code.includes('assert')) {
-      warnings.push('Python test file does not define a standard test_* function or assertion');
-    }
+    warnings.push(`No language adapter registered for language: "${language}"`);
   }
 
+  const errors = [...securityViolations, ...syntaxErrors];
+
   return {
-    isSafe: errors.length === 0,
+    isSafe: securityViolations.length === 0,
     syntaxValid,
+    securityViolations,
+    syntaxErrors,
     errors,
     warnings,
   };
@@ -110,7 +99,7 @@ export async function executeTestInSandbox(test: GeneratedTest): Promise<TestExe
   const startTime = Date.now();
   const safety = validateTestCodeSafety(test.testCode, test.language);
 
-  // If unsafe patterns detected, reject immediately
+  // If unsafe patterns detected, reject immediately with SANDBOX_RESTRICTED
   if (!safety.isSafe) {
     return {
       id: `exec-${test.id}-${Date.now().toString(36)}`,
@@ -120,7 +109,7 @@ export async function executeTestInSandbox(test: GeneratedTest): Promise<TestExe
       status: 'SANDBOX_RESTRICTED',
       executionTimeMs: Date.now() - startTime,
       stdout: '',
-      stderr: `Security sandbox policy violation:\n- ${safety.errors.join('\n- ')}`,
+      stderr: `Security sandbox policy violation:\n- ${safety.securityViolations.join('\n- ')}`,
       failureExplanation: 'The generated test attempted restricted operations that violate the isolated execution policy.',
       sandboxInfo: {
         isIsolated: false,
@@ -141,7 +130,7 @@ export async function executeTestInSandbox(test: GeneratedTest): Promise<TestExe
       status: 'ERROR',
       executionTimeMs: Date.now() - startTime,
       stdout: '',
-      stderr: `AST compilation error:\n${safety.errors.join('\n')}`,
+      stderr: `AST compilation error:\n${safety.syntaxErrors.join('\n')}`,
       failureExplanation: 'The test code could not be compiled into a valid executable module for the target framework.',
       sandboxInfo: {
         isIsolated: false,

@@ -4,6 +4,7 @@ import { GeneratedTest, ReviewFinding, SupportedLanguage } from '../../src/types
 import { sanitizeForPrompt, sanitizeHtmlContent } from '../security/sanitizer.js';
 import { sanitizeErrorMessage } from '../security/secretScrubber.js';
 import { validateTestCodeSafety } from '../sandbox/sandboxAdapter.js';
+import { languageAdapterRegistry } from '../adapters/languages/index.js';
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -27,15 +28,8 @@ export async function generateTestForFinding(
   fullSourceCode: string,
   language: SupportedLanguage
 ): Promise<GeneratedTest> {
-  const frameworkMap: Record<SupportedLanguage, 'vitest' | 'pytest' | 'junit' | 'xunit'> = {
-    typescript: 'vitest',
-    javascript: 'vitest',
-    python: 'pytest',
-    java: 'junit',
-    csharp: 'xunit',
-  };
-
-  const defaultFramework = frameworkMap[language] || 'vitest';
+  const adapter = languageAdapterRegistry.getAdapterOrNull(language);
+  const defaultFramework = adapter?.testFramework || 'vitest';
   const safeSource = sanitizeForPrompt(fullSourceCode);
   const safeTitle = sanitizeForPrompt(finding.title);
   const safeExcerpt = sanitizeForPrompt(finding.codeExcerpt);
@@ -125,32 +119,15 @@ Respond in JSON with this structure:
 
 function createFallbackTest(
   finding: ReviewFinding,
-  framework: 'vitest' | 'pytest' | 'junit' | 'xunit',
+  framework: GeneratedTest['framework'],
   language: SupportedLanguage
 ): GeneratedTest {
-  let testCode = '';
+  const adapter = languageAdapterRegistry.getAdapterOrNull(language);
+  const testCode = adapter
+    ? adapter.generateFallbackTest(finding)
+    : `// Generated unit test for ${finding.title}\n// Framework: ${framework}\n// Target: Lines ${finding.startLine}-${finding.endLine}`;
 
-  if (language === 'typescript' || language === 'javascript') {
-    testCode = `import { describe, it, expect } from 'vitest';
-
-describe('${finding.title.replace(/'/g, "\\'")}', () => {
-  it('should prevent or handle the identified condition (${finding.category})', () => {
-    // Target lines: ${finding.startLine}-${finding.endLine}
-    // Verified remediation test
-    expect(true).toBe(true);
-  });
-});`;
-  } else if (language === 'python') {
-    testCode = `import pytest
-
-def test_${finding.title.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30)}():
-    """Reproduces finding on lines ${finding.startLine}-${finding.endLine}: ${finding.title.replace(/"/g, '')}"""
-    assert True`;
-  } else {
-    testCode = `// Generated unit test for ${finding.title}
-// Framework: ${framework}
-// Target: Lines ${finding.startLine}-${finding.endLine}`;
-  }
+  const safetyCheck = validateTestCodeSafety(testCode, language);
 
   return {
     id: `test-${finding.id}-${Date.now().toString(36)}`,
@@ -160,7 +137,8 @@ def test_${finding.title.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 3
     language,
     targetFunction: 'testedUnit',
     testCode,
-    validationStatus: 'SYNTAX_VALID',
+    validationStatus: safetyCheck.syntaxValid && safetyCheck.isSafe ? 'SYNTAX_VALID' : 'SYNTAX_ERROR',
+    validationErrors: !safetyCheck.isSafe ? safetyCheck.errors : (!safetyCheck.syntaxValid ? safetyCheck.errors : []),
     testType: 'DEFECT_REPRODUCTION',
     createdAt: new Date().toISOString(),
   };

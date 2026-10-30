@@ -12,7 +12,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fluffy-spoon/csharp-parser": "^1.143.0",
     "@google/genai": "^2.4.0",
+    "@lezer/java": "^1.1.5",
+    "@lezer/python": "^1.1.19",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "cors": "^2.8.6",
