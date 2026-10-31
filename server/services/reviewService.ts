@@ -166,7 +166,20 @@ async function runAnalysisPipeline(
   const staticFindings: ReviewFinding[] = [];
   for (const file of review.files) {
     const changedLines = changedLinesMap[file.path];
-    const fileFindings = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
+    const adapter = languageAdapterRegistry.getAdapterOrNull(file.language);
+
+    let fileFindings: ReviewFinding[] = [];
+    if (adapter && adapter.runStaticAnalysis) {
+      fileFindings = await adapter.runStaticAnalysis(file.content, file.path, review.id, changedLines);
+    } else {
+      fileFindings = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
+    }
+
+    // Also run generic rules for non-Python languages if not already covered
+    if (file.language !== 'python' && adapter && adapter.runStaticAnalysis) {
+      const generic = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
+      fileFindings.push(...generic);
+    }
     
     // Validate patches on static findings
     for (const f of fileFindings) {
@@ -187,6 +200,9 @@ async function runAnalysisPipeline(
 
   for (const file of review.files) {
     try {
+      const adapter = languageAdapterRegistry.getAdapterOrNull(file.language);
+      const languageContext = adapter?.getLanguageContext ? adapter.getLanguageContext() : undefined;
+
       const geminiResult = await analyzeCodeWithGemini({
         reviewId: review.id,
         language: file.language,
@@ -195,6 +211,7 @@ async function runAnalysisPipeline(
         sourceCode: file.content,
         diffText: file.isDiff ? file.content : undefined,
         changedLines: changedLinesMap[file.path],
+        languageContext,
       });
       aiFindings.push(...geminiResult.findings);
     } catch (aiErr) {

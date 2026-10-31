@@ -84,6 +84,35 @@ describe('Language Adapter Registry & Offline AST Parsers', () => {
         defaultFileName: 'main.go',
         testFramework: 'gotest' as any,
         commentPrefix: '//',
+        getCapabilities: () => ({
+          language: 'go' as any,
+          displayName: 'Go',
+          fileExtensions: ['.go'],
+          defaultFileName: 'main.go',
+          syntaxValidation: {
+            engine: 'Go parser',
+            available: true,
+            offline: true,
+          },
+          staticAnalysis: {
+            primaryTool: 'golangci-lint',
+            primaryAvailable: false,
+            fallbackEngine: 'AST analysis',
+            available: false,
+            statusMessage: 'golangci-lint not installed',
+          },
+          testGeneration: {
+            targetFramework: 'vitest' as any,
+            available: true,
+          },
+          executionSandbox: {
+            available: false,
+            isolated: false,
+            statusMessage: 'Sandbox disabled',
+          },
+          tools: [],
+        }),
+        validateSource: () => ({ valid: true, errors: [] }),
         validateSyntax: () => ({ valid: true, errors: [], warnings: [] }),
         generateFallbackTest: () => 'func TestRemediation(t *testing.T) {}',
       };

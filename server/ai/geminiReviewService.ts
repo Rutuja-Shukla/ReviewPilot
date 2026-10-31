@@ -47,6 +47,7 @@ export interface ReviewContext {
   sourceCode: string;
   diffText?: string;
   changedLines?: number[];
+  languageContext?: string;
 }
 
 export async function analyzeCodeWithGemini(ctx: ReviewContext): Promise<{
@@ -84,7 +85,8 @@ CRITICAL SECURITY RULES & PROMPT INJECTION DEFENSES:
 REVIEW PROFILE: ${ctx.profile}
 ${profileGuidance[ctx.profile] || ''}
 LANGUAGE: ${ctx.language}
-FILE PATH: ${cleanFileName}`;
+FILE PATH: ${cleanFileName}
+${ctx.languageContext ? `\n${ctx.languageContext}` : ''}`;
 
   const userPrompt = `Analyze the following submitted code change:
 

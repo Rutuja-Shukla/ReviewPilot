@@ -1,5 +1,10 @@
 import { FileParser } from '@fluffy-spoon/csharp-parser';
-import { LanguageAdapter, SyntaxValidationResult } from './types.js';
+import {
+  LanguageAdapter,
+  SyntaxValidationResult,
+  SourceValidationResult,
+  LanguageCapabilities,
+} from './types.js';
 import { checkDelimitersAndQuotes } from './baseAdapter.js';
 import { ReviewFinding } from '../../../src/types/review.js';
 
@@ -20,6 +25,76 @@ export class CSharpAdapter implements LanguageAdapter {
   readonly defaultFileName = 'Program.cs';
   readonly testFramework = 'xunit' as const;
   readonly commentPrefix = '//';
+
+  getCapabilities(): LanguageCapabilities {
+    return {
+      language: this.language,
+      displayName: this.displayName,
+      fileExtensions: [...this.fileExtensions],
+      defaultFileName: this.defaultFileName,
+      syntaxValidation: {
+        engine: '@fluffy-spoon/csharp-parser & Lexical Verifier',
+        available: true,
+        offline: true,
+      },
+      staticAnalysis: {
+        primaryTool: 'ReviewPilot C# Rule Engine',
+        primaryAvailable: true,
+        fallbackEngine: 'AST Heuristic Engine',
+        available: true,
+        statusMessage: 'C# offline syntax parser and delimiter verifier active.',
+      },
+      testGeneration: {
+        targetFramework: 'xunit',
+        available: true,
+      },
+      executionSandbox: {
+        available: false,
+        isolated: false,
+        statusMessage: 'Server-side execution disabled by security policy (microVM isolation not present).',
+      },
+      tools: [
+        {
+          name: 'csharp-parser',
+          available: true,
+          version: '^1.143.0',
+          description: 'Offline C# class and method AST parser',
+          status: 'ACTIVE',
+        },
+        {
+          name: 'xUnit',
+          available: true,
+          description: 'Target test synthesis framework',
+          status: 'ACTIVE',
+        },
+      ],
+    };
+  }
+
+  validateSource(code: string, fileName?: string): SourceValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!code || code.trim().length === 0) {
+      errors.push('C# source code cannot be empty');
+      return { valid: false, errors, warnings };
+    }
+
+    if (fileName && !fileName.endsWith('.cs')) {
+      warnings.push(`File "${fileName}" does not have a .cs extension`);
+    }
+
+    const syntax = this.validateSyntax(code);
+    if (!syntax.valid) {
+      errors.push(...syntax.errors);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
 
   validateSyntax(code: string): SyntaxValidationResult {
     const errors: string[] = [];

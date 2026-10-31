@@ -6,3 +6,5 @@ export * from './pythonAdapter.js';
 export * from './javaAdapter.js';
 export * from './csharpAdapter.js';
 export * from './registry.js';
+export * from './ruffNormalizer.js';
+export * from './pythonStaticAnalyzer.js';

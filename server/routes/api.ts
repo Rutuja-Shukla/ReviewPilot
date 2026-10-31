@@ -7,6 +7,7 @@ import { executeTestInSandbox, CURRENT_SANDBOX_CAPABILITY } from '../sandbox/san
 import { runEvaluationSuite } from '../evaluation/evaluationRunner.js';
 import { sanitizeErrorMessage, scrubSecrets } from '../security/secretScrubber.js';
 import { sanitizeHtmlContent } from '../security/sanitizer.js';
+import { languageAdapterRegistry } from '../adapters/languages/index.js';
 
 export const apiRouter = Router();
 
@@ -430,6 +431,25 @@ apiRouter.get('/settings', (_req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: sanitizeErrorMessage(error, 'Failed to retrieve settings') });
+  }
+});
+
+// GET /api/languages/capabilities - retrieve detailed language adapter capabilities and tool status
+apiRouter.get('/languages/capabilities', (req: Request, res: Response) => {
+  try {
+    const langQuery = req.query.language as string | undefined;
+    if (langQuery) {
+      const adapter = languageAdapterRegistry.getAdapterOrNull(langQuery);
+      if (!adapter) {
+        return res.status(404).json({ success: false, message: `Unsupported language: "${langQuery}"` });
+      }
+      return res.json({ success: true, capabilities: adapter.getCapabilities() });
+    }
+
+    const allCapabilities = languageAdapterRegistry.getAllAdapters().map((adapter) => adapter.getCapabilities());
+    res.json({ success: true, capabilities: allCapabilities });
+  } catch (error) {
+    res.status(500).json({ success: false, message: sanitizeErrorMessage(error, 'Failed to retrieve language capabilities') });
   }
 });
 

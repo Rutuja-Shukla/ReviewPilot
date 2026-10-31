@@ -7,6 +7,7 @@ import {
   EvaluationRunSummary,
   SupportedLanguage,
   ReviewProfile,
+  LanguageCapabilities,
 } from '../types/review';
 
 export async function fetchReviews(): Promise<Review[]> {
@@ -161,4 +162,13 @@ export function exportPatch(patchContent: string, fileName = 'fix.patch'): void 
   a.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export async function fetchLanguageCapabilities(language?: SupportedLanguage): Promise<LanguageCapabilities[]> {
+  const url = language ? `/api/languages/capabilities?language=${language}` : '/api/languages/capabilities';
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Failed to fetch language capabilities');
+  return Array.isArray(data.capabilities) ? data.capabilities : [data.capabilities];
+}
+
 

@@ -1,5 +1,10 @@
 import * as esbuild from 'esbuild';
-import { LanguageAdapter, SyntaxValidationResult } from './types.js';
+import {
+  LanguageAdapter,
+  SyntaxValidationResult,
+  SourceValidationResult,
+  LanguageCapabilities,
+} from './types.js';
 import { ReviewFinding } from '../../../src/types/review.js';
 
 export class JavaScriptAdapter implements LanguageAdapter {
@@ -9,6 +14,84 @@ export class JavaScriptAdapter implements LanguageAdapter {
   readonly defaultFileName = 'src/index.js';
   readonly testFramework = 'vitest' as const;
   readonly commentPrefix = '//';
+
+  getCapabilities(): LanguageCapabilities {
+    return {
+      language: this.language,
+      displayName: this.displayName,
+      fileExtensions: [...this.fileExtensions],
+      defaultFileName: this.defaultFileName,
+      syntaxValidation: {
+        engine: 'esbuild (ESM/JS Parser)',
+        available: true,
+        offline: true,
+      },
+      staticAnalysis: {
+        primaryTool: 'ReviewPilot JavaScript Rule Engine',
+        primaryAvailable: true,
+        fallbackEngine: 'AST Heuristic Engine',
+        available: true,
+        statusMessage: 'Built-in deterministic static analysis active.',
+      },
+      testGeneration: {
+        targetFramework: 'vitest',
+        available: true,
+      },
+      executionSandbox: {
+        available: false,
+        isolated: false,
+        statusMessage: 'Server-side execution disabled by security policy (microVM isolation not present).',
+      },
+      tools: [
+        {
+          name: 'esbuild',
+          available: true,
+          version: '^0.25.0',
+          description: 'High-speed offline JavaScript parser & syntax validator',
+          status: 'ACTIVE',
+        },
+        {
+          name: 'vitest',
+          available: true,
+          version: '^5.0.5',
+          description: 'Target test synthesis framework',
+          status: 'ACTIVE',
+        },
+      ],
+    };
+  }
+
+  validateSource(code: string, fileName?: string): SourceValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!code || code.trim().length === 0) {
+      errors.push('JavaScript source code cannot be empty');
+      return { valid: false, errors, warnings };
+    }
+
+    if (fileName) {
+      const lower = fileName.toLowerCase().trim();
+      const hasValidExt = this.fileExtensions.some((ext) => lower.endsWith(ext));
+      if (!hasValidExt) {
+        warnings.push(`File "${fileName}" does not have a standard JavaScript extension (${this.fileExtensions.join(', ')})`);
+      }
+    }
+
+    const syntax = this.validateSyntax(code);
+    if (!syntax.valid) {
+      errors.push(...syntax.errors);
+    }
+    if (syntax.warnings) {
+      warnings.push(...syntax.warnings);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
 
   validateSyntax(code: string): SyntaxValidationResult {
     const errors: string[] = [];

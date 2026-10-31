@@ -517,4 +517,128 @@ export function getPublicAsset(userInput: string) {
     ],
     authorNote: 'Detects unhandled promise chains lacking .catch() handlers.',
   },
+
+  // 21. Clean Python baseline (precision test)
+  {
+    id: 'eval-21-python-clean-baseline',
+    name: 'Sanitized Python User Lookup (Clean Baseline)',
+    description: 'Clean Python service using parameterized sqlite3 query, typing hints, and context manager.',
+    category: 'CODE_QUALITY',
+    language: 'python',
+    inputType: 'snippet',
+    code: `import sqlite3
+from typing import Optional, Dict, Any
+
+def get_user_record(db_path: str, user_id: int) -> Optional[Dict[str, Any]]:
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("Invalid user_id: must be a positive integer")
+    
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, email FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "username": row[1], "email": row[2]}`,
+    expectedDefects: [],
+    authorNote: 'Precision test: analyzer should find 0 critical defects on this correct code.',
+  },
+
+  // 22. Python Command Injection via shell=True
+  {
+    id: 'eval-22-python-command-injection',
+    name: 'Subprocess Execution with shell=True',
+    description: 'Untrusted input string interpolated directly into shell=True command invocation.',
+    category: 'SECURITY',
+    language: 'python',
+    inputType: 'snippet',
+    code: `import subprocess
+
+def ping_host(target: str) -> str:
+    # Vulnerability: shell=True allows command chaining like "127.0.0.1; cat /etc/passwd"
+    cmd = f"ping -c 1 {target}"
+    return subprocess.check_output(cmd, shell=True, text=True)`,
+    expectedDefects: [
+      {
+        category: 'SECURITY',
+        severity: 'CRITICAL',
+        targetLine: 6,
+        keywords: ['shell', 'command injection', 'subprocess', 'rce'],
+      },
+    ],
+    authorNote: 'Detects dangerous subprocess command injection with shell=True.',
+  },
+
+  // 23. Python Mutable Default Argument
+  {
+    id: 'eval-23-python-mutable-default',
+    name: 'Mutable Default Argument in Function Definition',
+    description: 'List default argument retains mutated state across repeated calls.',
+    category: 'BUG',
+    language: 'python',
+    inputType: 'snippet',
+    code: `def register_tag(tag_name: str, current_tags: list = []):
+    # Bug: current_tags default list is shared across all function calls
+    current_tags.append(tag_name.strip())
+    return current_tags`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'HIGH',
+        targetLine: 1,
+        keywords: ['mutable default', 'default argument', 'shared state'],
+      },
+    ],
+    authorNote: 'Detects mutable default arguments in function signatures.',
+  },
+
+  // 24. Python Bare Except & Exception Swallowing
+  {
+    id: 'eval-24-python-bare-except',
+    name: 'Bare Except Clause with Exception Swallowing',
+    description: 'Bare except catching BaseException and swallowing errors with pass.',
+    category: 'BUG',
+    language: 'python',
+    inputType: 'snippet',
+    code: `def process_transaction(amount: float) -> bool:
+    try:
+        charge_account(amount)
+        return True
+    except:
+        pass
+    return False`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'HIGH',
+        targetLine: 5,
+        keywords: ['bare except', 'swallow', 'pass', 'catch'],
+      },
+    ],
+    authorNote: 'Detects bare except clauses and silent error swallowing.',
+  },
+
+  // 25. Python SQL Injection via String Formatting
+  {
+    id: 'eval-25-python-sqli-fstring',
+    name: 'Python DB-API SQL Injection via f-string',
+    description: 'Raw query formatted with f-string rather than DB-API parameter tuples.',
+    category: 'SECURITY',
+    language: 'python',
+    inputType: 'snippet',
+    code: `def authenticate_user(cursor, username: str, auth_token: str):
+    # Critical SQL Injection flaw
+    query = f"SELECT id, role FROM accounts WHERE username = '{username}' AND token = '{auth_token}'"
+    cursor.execute(query)
+    return cursor.fetchone()`,
+    expectedDefects: [
+      {
+        category: 'SECURITY',
+        severity: 'CRITICAL',
+        targetLine: 4,
+        keywords: ['sql injection', 'parameterized', 'cursor.execute'],
+      },
+    ],
+    authorNote: 'Detects unparameterized SQL queries in Python database calls.',
+  },
 ];

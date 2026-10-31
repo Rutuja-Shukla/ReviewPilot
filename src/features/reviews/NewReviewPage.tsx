@@ -10,6 +10,7 @@ import {
   Loader2,
   AlertCircle,
   Command,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface NewReviewPageProps {
@@ -54,6 +55,51 @@ export async function getUserAccount(req: Request, res: Response) {
 }`,
   },
   {
+    title: 'Command Injection in Subprocess (Python)',
+    description: 'Untrusted user input interpolated directly into shell=True command in Flask route.',
+    language: 'python',
+    profile: 'SECURITY_REVIEW',
+    inputType: 'snippet',
+    code: `import subprocess
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/api/ping', methods=['GET'])
+def ping_host():
+    target = request.args.get('target', '127.0.0.1')
+    # Defect: shell=True with unescaped user string leads to arbitrary command execution
+    cmd = f"ping -c 1 {target}"
+    output = subprocess.check_output(cmd, shell=True, text=True)
+    return jsonify({"output": output})
+`,
+  },
+  {
+    title: 'Mutable Default & Resource Leak (Python)',
+    description: 'Persistent list mutation across calls, unclosed open() file, and bare except.',
+    language: 'python',
+    profile: 'BUG_DETECTION',
+    inputType: 'snippet',
+    code: `def collect_metrics(metric_name: str, values: list = []):
+    # Defect 1: Mutable default argument retains state across invocations
+    values.append(metric_name)
+    
+    # Defect 2: Identity comparison with literal
+    if metric_name is "cpu_usage":
+        print("Monitoring CPU load")
+        
+    try:
+        # Defect 3: Resource opened without with context manager
+        f = open("/var/log/metrics.log", "a")
+        f.write(f"{metric_name}: {len(values)}\\n")
+    except:
+        # Defect 4: Bare except silently swallowing errors
+        pass
+        
+    return values
+`,
+  },
+  {
     title: 'Null Dereference & Resource Leak (Java)',
     description: 'Unchecked nullable dereference and unclosed FileInputStream stream resource.',
     language: 'java',
@@ -78,26 +124,6 @@ public class FileReaderService {
         return new String(data);
     }
 }`,
-  },
-  {
-    title: 'Command Injection in Subprocess (Python)',
-    description: 'Untrusted user input interpolated directly into shell=True command.',
-    language: 'python',
-    profile: 'SECURITY_REVIEW',
-    inputType: 'snippet',
-    code: `import subprocess
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
-
-@app.route('/api/ping', methods=['GET'])
-def ping_host():
-    target = request.args.get('target', '127.0.0.1')
-    # Defect: shell=True with unescaped user string leads to arbitrary command execution
-    cmd = f"ping -c 1 {target}"
-    output = subprocess.check_output(cmd, shell=True, text=True)
-    return jsonify({"output": output})
-`,
   },
   {
     title: 'Pull Request Unified Diff (Auth Middleware)',
@@ -332,6 +358,37 @@ export const NewReviewPage: React.FC<NewReviewPageProps> = ({ onReviewCreated })
               <option value="CODE_QUALITY">Code Quality</option>
               <option value="TEST_COVERAGE">Test Coverage</option>
             </select>
+          </div>
+        </div>
+
+        {/* Language Capabilities & Toolchain Status Banner */}
+        <div className="bg-slate-50 border border-slate-200 rounded p-2.5 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-600 gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="font-semibold text-slate-900 uppercase">
+              {language} Toolchain Status:
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {language === 'python'
+                ? 'AST: @lezer/python (Offline)'
+                : language === 'java'
+                ? 'AST: @lezer/java'
+                : language === 'csharp'
+                ? 'AST: csharp-parser'
+                : 'Parser: esbuild'}
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-700">
+              <span className={`w-1.5 h-1.5 rounded-full ${language === 'python' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
+              {language === 'python' ? 'Linter: Ruff (Fallback: Python AST Rules)' : 'Linter: ReviewPilot Engine'}
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+              Synthesis: {language === 'python' ? 'pytest' : language === 'java' ? 'JUnit 5' : language === 'csharp' ? 'xUnit' : 'vitest'}
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3 text-slate-400" />
+            <span>Server Isolation Policy Active</span>
           </div>
         </div>
 

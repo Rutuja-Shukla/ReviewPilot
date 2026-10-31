@@ -200,3 +200,42 @@ export interface AppSettings {
   sandboxIsolationConfigured: boolean;
   allowManualVerification: boolean;
 }
+
+export interface ToolStatus {
+  name: string;
+  available: boolean;
+  version?: string;
+  description: string;
+  installHint?: string;
+  status: 'ACTIVE' | 'FALLBACK' | 'UNAVAILABLE';
+}
+
+export interface LanguageCapabilities {
+  language: SupportedLanguage;
+  displayName: string;
+  fileExtensions: string[];
+  defaultFileName: string;
+  syntaxValidation: {
+    engine: string;
+    available: boolean;
+    offline: boolean;
+  };
+  staticAnalysis: {
+    primaryTool: string;
+    primaryAvailable: boolean;
+    fallbackEngine: string;
+    available: boolean;
+    statusMessage: string;
+  };
+  testGeneration: {
+    targetFramework: 'vitest' | 'jest' | 'pytest' | 'junit' | 'xunit';
+    available: boolean;
+  };
+  executionSandbox: {
+    available: boolean;
+    isolated: boolean;
+    statusMessage: string;
+  };
+  tools: ToolStatus[];
+}
+

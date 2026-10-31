@@ -1,5 +1,10 @@
 import { parser } from '@lezer/java';
-import { LanguageAdapter, SyntaxValidationResult } from './types.js';
+import {
+  LanguageAdapter,
+  SyntaxValidationResult,
+  SourceValidationResult,
+  LanguageCapabilities,
+} from './types.js';
 import { getLineAndColumn } from './baseAdapter.js';
 import { ReviewFinding } from '../../../src/types/review.js';
 
@@ -10,6 +15,76 @@ export class JavaAdapter implements LanguageAdapter {
   readonly defaultFileName = 'src/main/java/App.java';
   readonly testFramework = 'junit' as const;
   readonly commentPrefix = '//';
+
+  getCapabilities(): LanguageCapabilities {
+    return {
+      language: this.language,
+      displayName: this.displayName,
+      fileExtensions: [...this.fileExtensions],
+      defaultFileName: this.defaultFileName,
+      syntaxValidation: {
+        engine: '@lezer/java (Offline AST Parser)',
+        available: true,
+        offline: true,
+      },
+      staticAnalysis: {
+        primaryTool: 'ReviewPilot Java Rule Engine',
+        primaryAvailable: true,
+        fallbackEngine: 'AST Heuristic Engine',
+        available: true,
+        statusMessage: 'Java offline syntax parser and baseline rules active.',
+      },
+      testGeneration: {
+        targetFramework: 'junit',
+        available: true,
+      },
+      executionSandbox: {
+        available: false,
+        isolated: false,
+        statusMessage: 'Server-side execution disabled by security policy (microVM isolation not present).',
+      },
+      tools: [
+        {
+          name: '@lezer/java',
+          available: true,
+          version: '^1.1.5',
+          description: 'Offline Java concrete syntax tree parser',
+          status: 'ACTIVE',
+        },
+        {
+          name: 'JUnit 5',
+          available: true,
+          description: 'Target test synthesis framework',
+          status: 'ACTIVE',
+        },
+      ],
+    };
+  }
+
+  validateSource(code: string, fileName?: string): SourceValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!code || code.trim().length === 0) {
+      errors.push('Java source code cannot be empty');
+      return { valid: false, errors, warnings };
+    }
+
+    if (fileName && !fileName.endsWith('.java')) {
+      warnings.push(`File "${fileName}" does not have a .java extension`);
+    }
+
+    const syntax = this.validateSyntax(code);
+    if (!syntax.valid) {
+      errors.push(...syntax.errors);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
 
   validateSyntax(code: string): SyntaxValidationResult {
     const errors: string[] = [];
