@@ -641,4 +641,157 @@ def ping_host(target: str) -> str:
     ],
     authorNote: 'Detects unparameterized SQL queries in Python database calls.',
   },
+
+  // 26. Java Clean Baseline
+  {
+    id: 'eval-26-java-clean-baseline',
+    name: 'Clean Idiomatic Java Service Class',
+    description: 'Clean Java class with try-with-resources, Objects.requireNonNull, and parameterized logging.',
+    category: 'CODE_QUALITY',
+    language: 'java',
+    inputType: 'snippet',
+    code: `package com.example.service;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Objects;
+
+public class ConfigLoader {
+    public String loadConfig(String path) throws IOException {
+        Objects.requireNonNull(path, "path must not be null");
+        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
+            return reader.readLine();
+        }
+    }
+}`,
+    expectedDefects: [],
+    authorNote: 'Baseline verification that clean Java code does not trigger false positives.',
+  },
+
+  // 27. Java SQL Injection via JDBC Concatenation
+  {
+    id: 'eval-27-java-sqli-jdbc',
+    name: 'SQL Injection in JDBC Dynamic Statement',
+    description: 'Untrusted user parameter concatenated directly into SQL statement executeQuery call.',
+    category: 'SECURITY',
+    language: 'java',
+    inputType: 'snippet',
+    code: `package com.example.dao;
+
+import java.sql.Connection;
+import java.sql.Statement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class AccountDao {
+    public ResultSet findAccount(Connection conn, String accountId) throws SQLException {
+        Statement stmt = conn.createStatement();
+        String sql = "SELECT * FROM accounts WHERE id = '" + accountId + "'";
+        return stmt.executeQuery(sql);
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'SECURITY',
+        severity: 'CRITICAL',
+        targetLine: 12,
+        keywords: ['sql injection', 'parameterized', 'preparedstatement'],
+      },
+    ],
+    authorNote: 'Detects dynamic query concatenation in JDBC statement execution.',
+  },
+
+  // 28. Java Resource Leak without Try-With-Resources
+  {
+    id: 'eval-28-java-resource-leak',
+    name: 'Unclosed FileInputStream Resource Leak',
+    description: 'FileInputStream allocated without try-with-resources leaving file descriptor open.',
+    category: 'BUG',
+    language: 'java',
+    inputType: 'snippet',
+    code: `package com.example.io;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+
+public class RawFileReader {
+    public byte[] readAll(String path) throws IOException {
+        FileInputStream fis = new FileInputStream(path);
+        byte[] bytes = new byte[fis.available()];
+        fis.read(bytes);
+        return bytes;
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'HIGH',
+        targetLine: 8,
+        keywords: ['resource leak', 'try-with-resources', 'unclosed stream'],
+      },
+    ],
+    authorNote: 'Detects stream allocations not guarded by try-with-resources.',
+  },
+
+  // 29. Java String Reference Equality
+  {
+    id: 'eval-29-java-string-equality',
+    name: 'String Reference Comparison with "=="',
+    description: 'Comparing String variable with string literal using == operator instead of .equals().',
+    category: 'BUG',
+    language: 'java',
+    inputType: 'snippet',
+    code: `package com.example.auth;
+
+public class RoleChecker {
+    public boolean isAdmin(String role) {
+        if (role == "ADMIN") {
+            return true;
+        }
+        return false;
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'HIGH',
+        targetLine: 5,
+        keywords: ['string comparison', 'identity', '.equals', '=='],
+      },
+    ],
+    authorNote: 'Detects reference identity comparison on String variables.',
+  },
+
+  // 30. Java Swallowed Exception
+  {
+    id: 'eval-30-java-swallowed-exception',
+    name: 'Swallowed Exception in Empty Catch Block',
+    description: 'Empty catch block silently suppressing unexpected runtime failures.',
+    category: 'BUG',
+    language: 'java',
+    inputType: 'snippet',
+    code: `package com.example.process;
+
+public class TaskRunner {
+    public void executeTask() {
+        try {
+            performWork();
+        } catch (Exception e) {
+            // Silently swallowed
+        }
+    }
+
+    private void performWork() throws Exception {}
+}`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'MEDIUM',
+        targetLine: 7,
+        keywords: ['swallowed exception', 'empty catch', 'suppressed'],
+      },
+    ],
+    authorNote: 'Detects empty catch blocks that swallow exceptions.',
+  },
 ];

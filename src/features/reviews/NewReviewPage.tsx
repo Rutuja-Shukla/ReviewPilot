@@ -112,16 +112,50 @@ import java.io.IOException;
 
 public class FileReaderService {
     public String readFileContent(String filePath) throws IOException {
-        // Defect: Null pointer potential
-        if (filePath.isEmpty()) {
-            return null;
+        // Defect 1: Inverted string equals with null risk
+        if (filePath.equals("default.txt")) {
+            return "DEFAULT_CONTENT";
         }
 
-        // Defect: Unclosed resource stream leak without try-with-resources
+        // Defect 2: Unclosed resource stream leak without try-with-resources
         FileInputStream fis = new FileInputStream(filePath);
         byte[] data = new byte[fis.available()];
         fis.read(data);
         return new String(data);
+    }
+}`,
+  },
+  {
+    title: 'SQL Injection & String Equality (Java)',
+    description: 'Dynamic JDBC query execution and string reference comparison with "==".',
+    language: 'java',
+    profile: 'SECURITY_REVIEW',
+    inputType: 'snippet',
+    code: `package com.example.auth;
+
+import java.sql.Connection;
+import java.sql.Statement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class UserService {
+    public boolean authenticateUser(Connection conn, String username, String role) throws SQLException {
+        // Defect 1: Identity comparison with literal string
+        if (role == "ADMIN") {
+            System.out.println("Elevated admin auth requested");
+        }
+
+        // Defect 2: SQL Injection via unparameterized concatenation
+        Statement stmt = conn.createStatement();
+        String query = "SELECT * FROM users WHERE username = '" + username + "'";
+        ResultSet rs = stmt.executeQuery(query);
+
+        try {
+            return rs.next();
+        } catch (Exception e) {
+            // Defect 3: Swallowed exception with no error recovery
+        }
+        return false;
     }
 }`,
   },
@@ -379,7 +413,11 @@ export const NewReviewPage: React.FC<NewReviewPageProps> = ({ onReviewCreated })
             </span>
             <span className="flex items-center gap-1.5 text-slate-700">
               <span className={`w-1.5 h-1.5 rounded-full ${language === 'python' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
-              {language === 'python' ? 'Linter: Ruff (Fallback: Python AST Rules)' : 'Linter: ReviewPilot Engine'}
+              {language === 'python'
+                ? 'Linter: Ruff (Fallback: Python AST Rules)'
+                : language === 'java'
+                ? 'Linter: Checkstyle (Fallback: Java AST Rules)'
+                : 'Linter: ReviewPilot Engine'}
             </span>
             <span className="flex items-center gap-1.5 text-slate-700">
               <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>

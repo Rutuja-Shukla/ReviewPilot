@@ -57,6 +57,14 @@ export interface LanguageCapabilities {
   tools: ToolStatus[];
 }
 
+export interface ProjectStructureInfo {
+  projectType: 'STANDALONE_FILE' | 'MAVEN_SINGLE_MODULE' | 'GRADLE_SINGLE_MODULE' | 'UNSUPPORTED_MULTI_MODULE' | 'UNKNOWN';
+  supported: boolean;
+  message: string;
+  buildFilePath?: string;
+  moduleCount?: number;
+}
+
 export interface LanguageAdapter {
   readonly language: SupportedLanguage;
   readonly displayName: string;
@@ -119,4 +127,12 @@ export interface LanguageAdapter {
    * Language-specific static rules, if any.
    */
   getStaticRules?(): StaticRule[];
+
+  /**
+   * Detects project build structure (e.g. Maven, Gradle, standalone file) and checks if supported.
+   */
+  detectProjectStructure?(
+    filePath: string,
+    allFiles?: string[] | { path: string; content?: string }[]
+  ): ProjectStructureInfo;
 }

@@ -175,8 +175,8 @@ async function runAnalysisPipeline(
       fileFindings = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
     }
 
-    // Also run generic rules for non-Python languages if not already covered
-    if (file.language !== 'python' && adapter && adapter.runStaticAnalysis) {
+    // Run generic fallback rules only for languages without a dedicated static analyzer
+    if (file.language !== 'python' && file.language !== 'java' && adapter && adapter.runStaticAnalysis) {
       const generic = runStaticAnalysis(file.content, file.path, file.language, review.id, changedLines);
       fileFindings.push(...generic);
     }
