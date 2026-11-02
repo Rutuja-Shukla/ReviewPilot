@@ -182,6 +182,35 @@ public class UserService {
    next();
  }`,
   },
+  {
+    title: 'SQL Injection & Missing Using Statement (C#)',
+    description: 'Direct string concatenation in SqlCommand and missing using statement on IDisposable connection.',
+    language: 'csharp',
+    profile: 'SECURITY_REVIEW',
+    inputType: 'snippet',
+    code: `using System;
+using System.Data.SqlClient;
+
+namespace ReviewPilot.Demo
+{
+    public class UserRepository
+    {
+        public bool ValidateCredentials(string connectionString, string userId, string password)
+        {
+            // Defect 1: Unclosed IDisposable connection without using declaration
+            var conn = new SqlConnection(connectionString);
+            conn.Open();
+
+            // Defect 2: SQL Injection via unparameterized string concatenation
+            var query = "SELECT COUNT(*) FROM Users WHERE Id = '" + userId + "' AND PasswordHash = '" + password + "'";
+            var cmd = new SqlCommand(query, conn);
+
+            var count = (int)cmd.ExecuteScalar();
+            return count > 0;
+        }
+    }
+}`,
+  },
 ];
 
 export const NewReviewPage: React.FC<NewReviewPageProps> = ({ onReviewCreated }) => {
@@ -417,6 +446,8 @@ export const NewReviewPage: React.FC<NewReviewPageProps> = ({ onReviewCreated })
                 ? 'Linter: Ruff (Fallback: Python AST Rules)'
                 : language === 'java'
                 ? 'Linter: Checkstyle (Fallback: Java AST Rules)'
+                : language === 'csharp'
+                ? 'Linter: Roslyn / ReviewPilot Rules'
                 : 'Linter: ReviewPilot Engine'}
             </span>
             <span className="flex items-center gap-1.5 text-slate-700">

@@ -78,6 +78,12 @@ export class JavaScriptAdapter implements LanguageAdapter {
       }
     }
 
+    const maxSizeBytes = 1024 * 1024; // 1MB limit
+    if (code.length > maxSizeBytes) {
+      errors.push(`Source code size (${code.length} bytes) exceeds limit of ${maxSizeBytes} bytes`);
+      return { valid: false, errors, warnings };
+    }
+
     const syntax = this.validateSyntax(code);
     if (!syntax.valid) {
       errors.push(...syntax.errors);

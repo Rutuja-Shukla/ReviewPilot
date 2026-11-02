@@ -97,6 +97,7 @@ export class PythonAdapter implements LanguageAdapter {
     const maxSizeBytes = 1024 * 1024; // 1MB
     if (code.length > maxSizeBytes) {
       errors.push(`Source code size (${code.length} bytes) exceeds limit of ${maxSizeBytes} bytes`);
+      return { valid: false, errors, warnings };
     }
 
     // Run offline AST parse check

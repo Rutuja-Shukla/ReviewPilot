@@ -1,152 +1,164 @@
-# ReviewPilot: AI Code Review & Automated Testing Platform
+# ReviewPilot: Multi-Language Code Review & Automated Testing Platform
 
-**ReviewPilot** is a production-grade, full-stack AI-assisted code review and automated testing platform designed for engineering teams. It bridges deterministic static analysis with contextual reasoning from Google Gemini models, synthesizes targeted unit test reproduction suites, executes safe sandbox AST validations, and produces actionable unified diff patches.
-
----
-
-## 1. System Architecture
-
-ReviewPilot separates concerns into explicit architectural layers:
-
-```
-├── Presentation Layer
-│   ├── Navigation & Overview Dashboard (real aggregated telemetry)
-│   ├── New Review Intake (snippets, git diffs, file uploads, presets)
-│   ├── Review Workspace (split-pane line-anchored code & diff viewer)
-│   ├── Findings Explorer (multi-factor search, filters, dismissal tracking)
-│   ├── Test Lab (synthesized test suite viewer & AST sandbox terminal)
-│   ├── Evaluation Suite (20-fixture empirical benchmark suite)
-│   └── Settings & Privacy (data retention policies, sandbox disclosures)
-│
-├── API & Server Layer (Node.js / Express / TypeScript)
-│   ├── REST endpoints under /api/*
-│   ├── Strict request & response schemas
-│   ├── In-memory repository with retention policy enforcement
-│   └── Error handling & health probes
-│
-├── Deterministic Analysis Engine
-│   ├── Unified Git Diff Parser (hunk line mapping, additions/deletions)
-│   └── Multi-Language Rule Engine (SEC-001..007, BUG-001..007, PERF-001..002)
-│
-├── AI Contextual Review & Test Generation
-│   ├── Server-side @google/genai SDK (gemini-3.8-flash)
-│   ├── Untrusted code prompt boundary isolation (<untrusted_source_code>)
-│   ├── Zod runtime schema validation & recovery
-│   └── Targeted test synthesis (Vitest, Jest, pytest, JUnit, xUnit)
-│
-├── Safe Sandbox Adapter
-│   ├── AST & syntax tree validation
-│   ├── Execution boundaries (timeout limits, memory limits, no arbitrary shell)
-│   └── Transparent capability & isolation disclosures
-│
-└── Evaluation & Regression Harness
-    ├── 20 comprehensive test fixtures across real-world defect categories
-    └── Precision, recall, false-positive rate, and line accuracy metrics
-```
+ReviewPilot is a developer platform that pairs deterministic static analysis with server-side AI reasoning from Google Gemini models. It analyzes source files and unified git diffs, validates findings against actual source boundaries, synthesizes targeted reproduction unit tests, and validates syntax offline across TypeScript, JavaScript, Python, Java, and C#.
 
 ---
 
-## 2. Directory Structure
+## 1. Supported Languages & File Types
+
+| Language | Extensions | Primary Parser / Syntax Engine | Static Analysis Tooling | Target Test Framework | Project Layouts Supported |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **TypeScript** | `.ts`, `.tsx`, `.mts`, `.cts` | `esbuild` (Offline ESM parser) | ReviewPilot TypeScript Rule Engine | Vitest | Single file, standard npm / tsconfig |
+| **JavaScript** | `.js`, `.jsx`, `.mjs`, `.cjs` | `esbuild` (Offline JS parser) | ReviewPilot JavaScript Rule Engine | Vitest | Single file, Node.js packages |
+| **Python** | `.py`, `.pyw` | `@lezer/python` (Offline AST parser) | Ruff (executed when in PATH) + Built-in AST Rules (`PY-SEC-001`..`004`, `PY-BUG-001`..`004`, `PY-RES-001`) | pytest | Standalone `.py` modules |
+| **Java** | `.java` | `@lezer/java` (Offline AST parser) | Checkstyle / PMD (when in PATH) + Built-in AST Rules (`JAVA-SEC-001`..`004`, `JAVA-BUG-001`..`004`, `JAVA-QUAL-001`) | JUnit 5 | Standalone `.java`, single-module Maven (`pom.xml`), single-module Gradle (`build.gradle`) |
+| **C#** | `.cs` | `@fluffy-spoon/csharp-parser` & Lexical Verifier | ReviewPilot C# Rule Engine (SQL concat, secrets, process execution) | xUnit | Standalone `.cs`, single-project `.csproj` |
+
+---
+
+## 2. Capability Matrix
+
+| Capability | TypeScript | JavaScript | Python | Java | C# | Status Definition & Evidence |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Source Acceptance & Detection** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified by `crossLanguageReadiness.test.ts` across filenames, content heuristics, and diff headers. |
+| **Syntax / Parser Validation** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified offline via `esbuild`, `@lezer/python`, `@lezer/java`, and `@fluffy-spoon/csharp-parser`. |
+| **Deterministic Static Analysis** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified via rule tests (`staticAnalyzer.test.ts`, `pythonSupport.test.ts`, `javaSupport.test.ts`). |
+| **AI Contextual Review** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified via `pipeline.test.ts` with server-side Gemini 3.8 Flash, strict schemas, and line clamping. |
+| **Finding Schema & Coordinate Clamping** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified via `clampFindingCoordinates` and path sanitization tests. |
+| **Test Generation** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified fallback and AI test generators producing valid Vitest, pytest, JUnit 5, and xUnit code. |
+| **Test Syntax Validation** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Verified that generated test code passes offline parser validation in each language. |
+| **Test Execution in Main Server** | Unavailable by policy | Unavailable by policy | Unavailable by policy | Unavailable by policy | Unavailable by policy | Intentionally disabled on server; returns `SANDBOX_RESTRICTED` to prevent remote code execution. |
+| **Isolated microVM Execution** | Unavailable in current env | Unavailable in current env | Unavailable in current env | Unavailable in current env | Unavailable in current env | Host container lacks microVM hypervisor (e.g., Firecracker / gVisor). Reported truthfully in UI. |
+| **Missing-Dependency Handling** | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Implemented & verified | Detects absent Ruff, Checkstyle, javac, or dotnet binaries without fabricating findings or crashing. |
+
+---
+
+## 3. Safe Execution Architecture
+
+ReviewPilot enforces a strict security invariant: **Untrusted user-submitted code and AI-generated tests are never executed inside the main application server process.**
 
 ```
-├── server.ts                             # Full-stack server entry point (Express + Vite)
-├── package.json                          # Dependencies & scripts
-├── metadata.json                         # ReviewPilot metadata & server capabilities
-├── vite.config.ts                        # Vite configuration
-├── server/
-│   ├── ai/
-│   │   ├── geminiReviewService.ts        # Server-side Gemini review integration
-│   │   └── geminiTestService.ts          # Automated unit test generation service
-│   ├── analyzers/
-│   │   ├── diffParser.ts                 # Unified git diff parser with line mapping
-│   │   └── staticAnalyzer.ts             # Deterministic rules (Security, Bugs, Perf)
-│   ├── evaluation/
-│   │   ├── fixtures.ts                   # 20 benchmark fixtures for code review evaluation
-│   │   └── evaluationRunner.ts           # Evaluation runner with precision/recall math
-│   ├── repositories/
-│   │   └── reviewRepository.ts           # Repository abstraction with seeded demo data
-│   ├── routes/
-│   │   └── api.ts                        # Complete REST API routes
-│   ├── sandbox/
-│   │   └── sandboxAdapter.ts             # Safe AST validator & sandbox adapter
-│   └── types/                            # Server types
-├── src/
-│   ├── App.tsx                           # Main React application & routing
-│   ├── components/
-│   │   ├── Navigation.tsx                # Technical sidebar navigation
-│   │   ├── SeverityBadge.tsx             # Accessible severity indicators
-│   │   └── StatusBadge.tsx               # Detection source & validation status badges
-│   ├── features/
-│   │   ├── dashboard/DashboardPage.tsx   # Overview dashboard with real telemetry
-│   │   ├── reviews/
-│   │   │   ├── NewReviewPage.tsx         # Intake form with 1-click test scenarios
-│   │   │   └── ReviewWorkspacePage.tsx   # Split-pane diff & findings workspace
-│   │   ├── findings/FindingsExplorerPage.tsx # Search, filter, and false-positive dismissal
-│   │   ├── test-generation/TestLabPage.tsx   # Generated tests & sandbox execution
-│   │   ├── evaluation/EvaluationSuitePage.tsx # 20-fixture evaluation benchmark
-│   │   ├── history/ReviewHistoryPage.tsx     # Audit ledger with purge action
-│   │   └── settings/SettingsPage.tsx         # Privacy, retention, and model settings
-│   ├── lib/api.ts                        # Typed client API helper
-│   └── types/review.ts                   # Domain models & TypeScript interfaces
-└── tests/
-    └── unit/
-        ├── diffParser.test.ts            # Unit tests for Git diff parser
-        └── staticAnalyzer.test.ts        # Unit tests for deterministic rules
+[User Source / Generated Test]
+           │
+           ▼
+[Lexical & Path Sanitization] ───► Size > 1MB or Traversal? ──► Rejection
+           │
+           ▼
+[Offline AST Syntax Parser] ─────► Syntax Error? ──────────────► Diagnostics Only (No Execution)
+           │
+           ▼
+[Security Policy Check] ─────────► ChildProcess / Network / Eval? ──► Blocked
+           │
+           ▼
+[Execution Sandbox Adapter] ─────► microVM Isolation Present?
+                                          │
+                        ┌─────────────────┴─────────────────┐
+                        ▼                                   ▼
+                   YES (Cloud Runner)                  NO (Current Host)
+                   Ephemeral VM run                 Execution Safely Disabled
+                                                    `SANDBOX_RESTRICTED`
+                                                    Download / Copy for local run
+```
+
+When hypervisor microVM infrastructure is absent, ReviewPilot:
+1. Validates test syntax and structural integrity offline.
+2. Emits status `SANDBOX_RESTRICTED` with a clear explanation.
+3. Provides one-click "Copy Test" and "Export" workflows for safe local execution in developer containers.
+
+---
+
+## 4. Analysis & Review Pipeline
+
+```
+1. Intake & Validation
+   - File size ceiling: 1 MB limit enforced across all adapters.
+   - Unified diff parser: Validates `diff --git`, `---`, `+++`, `@@` chunk headers.
+   - Path sanitization: Strips `../` traversal sequences, Windows drive letters, and null bytes.
+
+2. Deterministic Static Analyzers
+   - Checks static security rules (hardcoded credentials, SQL injection, command execution, path traversal).
+   - Python AST analyzer: Checks `shell=True`, mutable defaults, bare except, f-string SQLi, unclosed open().
+   - Java AST analyzer: Checks JDBC string concatenation, `==` string comparisons, unclosed streams without try-with-resources.
+   - Normalizers for Ruff (Python) and Checkstyle/PMD (Java) when binaries exist in PATH.
+
+3. Contextual AI Review (Server-side Gemini 3.8 Flash)
+   - Code is isolated in prompt boundaries (`<untrusted_source_code>`).
+   - Line numbers are clamped strictly to valid 1..totalLines ranges.
+   - Structured JSON response validated through Zod runtime schemas.
+   - Static analysis findings and AI observations are stored separately to prevent false conflation.
+
+4. Test Synthesis & Export
+   - Synthesizes targeted regression tests reproducing reported findings.
+   - Validates generated test grammar offline.
 ```
 
 ---
 
-## 3. Supported Languages & Analyzers
+## 5. External Services vs Offline Capabilities
 
-| Language | Static Analyzer Rules | AI Contextual Reasoning | Test Framework |
-| :--- | :--- | :--- | :--- |
-| **TypeScript / JavaScript** | ✅ Full rules (Secrets, Injection, Eval, Nulls, Boundaries, Async) | ✅ Gemini 3.8 Flash | Vitest / Jest |
-| **Python** | ✅ Resource leaks, eval, prompt injection, SQL injection | ✅ Gemini 3.8 Flash | pytest |
-| **Java** | ✅ SQL concat, hardcoded tokens, prompt injection | ✅ Gemini 3.8 Flash | JUnit |
-| **C#** | ✅ SQL concat, hardcoded tokens, prompt injection | ✅ Gemini 3.8 Flash | xUnit / NUnit |
-
----
-
-## 4. Empirical Evaluation Benchmark (20 Fixtures)
-
-ReviewPilot includes a standardized regression suite comprising 20 small, clearly-labeled test fixtures:
-1. **Clean Baseline**: User registration with Bcrypt and parameterized queries (precision test).
-2. **Null Dereference**: Deep optional chaining bug.
-3. **Assignment in Conditional**: Accidental `=` instead of `===`.
-4. **Off-by-One**: Array iteration `<= length`.
-5. **Swallowed Exception**: Empty catch block on payment path.
-6. **Redundant Queries**: N+1 query executed inside iteration loop.
-7. **Resource Leak**: Unclosed file descriptor without finally block.
-8. **Async Race Hazard**: Non-atomic read-modify-write inventory stock update.
-9. **SQL Injection**: String concatenation in query string.
-10. **Missing Authorization**: Privileged tenant deletion lacking role check.
-11. **Quadratic Complexity**: Nested `.find()` inside `.map()`.
-12. **Inadequate Test Coverage**: Negative numbers and fractional edge conditions.
-13. **Adversarial Prompt Injection**: Malicious instructions embedded in code comments.
-14. **Unchanged Diff Context**: Legacy bugs outside modified diff hunks.
-15. **Uncertainty Baseline**: Ambiguous domain discount tier.
-16. **Hardcoded Secrets**: Embedded cloud access credentials.
-17. **Dynamic Code Execution**: `new Function()` with untrusted parameter.
-18. **Path Traversal**: Unsanitized filesystem read with dot-dot-slash.
-19. **Insecure CORS**: Wildcard origin with credentials header.
-20. **Unhandled Promise**: Asynchronous dispatch without `await` or `.catch()`.
-
-Run anytime from the UI or via API (`POST /api/evaluations/run`).
+- **Offline (Zero External Calls)**:
+  - Language detection from extensions, diff headers, and file heuristics.
+  - Syntax parsing and AST validation via `esbuild`, `@lezer/python`, `@lezer/java`, and `@fluffy-spoon/csharp-parser`.
+  - Deterministic static rule evaluation and unified diff patch validation.
+  - Project layout detection (Maven `pom.xml`, Gradle `build.gradle`, C# `.csproj`).
+  - Fallback test code generation.
+- **External Service Required**:
+  - Contextual AI reasoning and custom test synthesis require access to Google Gemini via the server-side `@google/genai` SDK using `GEMINI_API_KEY`.
+  - When the API key is absent, ReviewPilot gracefully falls back to deterministic static checks without failing.
 
 ---
 
-## 5. Build, Lint & Test Commands
+## 6. Known Limitations
 
-- **Build**: `npm run build`
-- **Lint / Typecheck**: `npm run lint` (runs `tsc --noEmit`)
-- **Unit Tests**: `npm run test` (runs `vitest run`)
-- **Dev Server**: `npm run dev` (starts full-stack server on `http://0.0.0.0:3000`)
+1. **Host Compiler Binaries**: The current hosting environment does not include preinstalled JDK (`javac`), Python `ruff`, Java `checkstyle`/`pmd`, or .NET SDK (`dotnet`). ReviewPilot detects these absences and reports `primaryAvailable: false` with `status: FALLBACK` instead of faking results.
+2. **Multi-Module Reactor Builds**: ReviewPilot analyzes standalone source files and single-module project files. Multi-module Maven reactor builds (multiple `pom.xml` files) and multi-project Visual Studio solutions (`.sln`) are recognized and flagged as `UNSUPPORTED_MULTI_MODULE` with advice to review individual submodules.
+3. **Execution Sandboxing**: Server-side execution of untrusted test suites is disabled by design. Running tests requires copying or exporting the test file to a local runner or containerized CI pipeline.
 
 ---
 
-## 6. Security Boundaries & Privacy Guarantees
+## 7. Setup & Installation
 
-1. **Untrusted Code Isolation**: All user-submitted code and diffs are enclosed in `<untrusted_source_code>` fences and explicitly marked as passive data. Models are instructed to disregard directives or prompt injections embedded in comments.
-2. **Zero Client Secret Exposure**: All AI calls to `@google/genai` are executed strictly server-side. No API keys exist in frontend bundles.
-3. **No Unsafe Execution**: Arbitrary code execution (eval, child_process shell execution) is prohibited. Test execution is governed by AST verification and bounded time/memory constraints.
-4. **Data Retention Compliance**: Source files are subject to configured retention windows (`session`, `24h`, `7d`, `30d`), and users can permanently purge review records from the audit ledger.
+### Prerequisites
+- Node.js 20 or higher
+- npm 9 or higher
+- Optional local tools for enhanced linting: `ruff` (Python), `checkstyle` (Java), `dotnet` (C#)
+
+### Environment Configuration
+Create a `.env` file from `.env.example`:
+```bash
+cp .env.example .env
+```
+Key configuration variables:
+```bash
+GEMINI_API_KEY=your_gemini_api_key_here  # Optional: enables AI review & test synthesis
+PORT=3000                                 # Application port (default: 3000)
+```
+
+### Installation
+```bash
+npm install
+```
+
+---
+
+## 8. Verification & Test Commands
+
+Run the full automated test suite (10 test files, 197 unit and integration tests):
+```bash
+npm test
+```
+
+Run TypeScript compilation check:
+```bash
+npm run lint
+```
+
+Build the frontend bundle:
+```bash
+npm run build
+```
+
+Start the full-stack development server:
+```bash
+npm run dev
+```

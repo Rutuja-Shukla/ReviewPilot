@@ -794,4 +794,173 @@ public class TaskRunner {
     ],
     authorNote: 'Detects empty catch blocks that swallow exceptions.',
   },
+
+  // 31. C# Clean Baseline
+  {
+    id: 'eval-31-csharp-clean-baseline',
+    name: 'Clean Idiomatic C# Repository Class',
+    description: 'Clean C# class using using declaration, parameterized logging, and ArgumentNullException validation.',
+    category: 'CODE_QUALITY',
+    language: 'csharp',
+    inputType: 'snippet',
+    code: `using System;
+using System.IO;
+
+namespace ReviewPilot.Clean
+{
+    public class FileReader
+    {
+        public string ReadContent(string filePath)
+        {
+            ArgumentNullException.ThrowIfNull(filePath);
+            using var reader = new StreamReader(filePath);
+            return reader.ReadToEnd();
+        }
+    }
+}`,
+    expectedDefects: [],
+    authorNote: 'Baseline verification that clean C# code triggers no false positives.',
+  },
+
+  // 32. C# SQL Injection in SqlCommand
+  {
+    id: 'eval-32-csharp-sqli-ado',
+    name: 'SQL Injection in ADO.NET SqlCommand Concatenation',
+    description: 'Untrusted user variable concatenated into SqlCommand CommandText string.',
+    category: 'SECURITY',
+    language: 'csharp',
+    inputType: 'snippet',
+    code: `using System;
+using System.Data.SqlClient;
+
+namespace ReviewPilot.Vulnerable
+{
+    public class AccountRepository
+    {
+        public int GetAccountCount(SqlConnection conn, string accountType)
+        {
+            var sql = "SELECT COUNT(*) FROM Accounts WHERE Type = '" + accountType + "'";
+            using var cmd = new SqlCommand(sql, conn);
+            return (int)cmd.ExecuteScalar();
+        }
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'SECURITY',
+        severity: 'CRITICAL',
+        targetLine: 11,
+        keywords: ['sql injection', 'parameterized', 'sqlcommand'],
+      },
+    ],
+    authorNote: 'Detects raw string concatenation in ADO.NET SqlCommand execution.',
+  },
+
+  // 33. C# Unclosed IDisposable Resource
+  {
+    id: 'eval-33-csharp-unclosed-disposable',
+    name: 'Unclosed FileStream Resource Leak',
+    description: 'FileStream allocated without using statement or declaration.',
+    category: 'BUG',
+    language: 'csharp',
+    inputType: 'snippet',
+    code: `using System;
+using System.IO;
+
+namespace ReviewPilot.Vulnerable
+{
+    public class LogProcessor
+    {
+        public byte[] ReadAll(string path)
+        {
+            var stream = new FileStream(path, FileMode.Open);
+            var buffer = new byte[stream.Length];
+            stream.Read(buffer, 0, buffer.Length);
+            return buffer;
+        }
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'HIGH',
+        targetLine: 10,
+        keywords: ['resource leak', 'disposable', 'using'],
+      },
+    ],
+    authorNote: 'Detects IDisposable allocations not guarded by using.',
+  },
+
+  // 34. C# Swallowed Exception in Empty Catch
+  {
+    id: 'eval-34-csharp-empty-catch',
+    name: 'Swallowed Exception in Empty Catch Block',
+    description: 'Catch block silently swallowing exceptions without logging or rethrow.',
+    category: 'BUG',
+    language: 'csharp',
+    inputType: 'snippet',
+    code: `using System;
+
+namespace ReviewPilot.Vulnerable
+{
+    public class PaymentGateway
+    {
+        public void ProcessPayment()
+        {
+            try
+            {
+                SubmitTransaction();
+            }
+            catch (Exception)
+            {
+                // Silently swallowed
+            }
+        }
+
+        private void SubmitTransaction() {}
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'BUG',
+        severity: 'MEDIUM',
+        targetLine: 15,
+        keywords: ['swallowed exception', 'empty catch', 'suppressed'],
+      },
+    ],
+    authorNote: 'Detects empty catch blocks swallowing System.Exception in C#.',
+  },
+
+  // 35. C# Command Injection
+  {
+    id: 'eval-35-csharp-command-injection',
+    name: 'Command Injection via Unsanitized Process.Start',
+    description: 'Dynamic user argument concatenated into shell command execution.',
+    category: 'SECURITY',
+    language: 'csharp',
+    inputType: 'snippet',
+    code: `using System;
+using System.Diagnostics;
+
+namespace ReviewPilot.Vulnerable
+{
+    public class NetworkDiagnostics
+    {
+        public void Ping(string host)
+        {
+            var psi = new ProcessStartInfo("sh", "-c " + host);
+            Process.Start(psi);
+        }
+    }
+}`,
+    expectedDefects: [
+      {
+        category: 'SECURITY',
+        severity: 'CRITICAL',
+        targetLine: 10,
+        keywords: ['command injection', 'process.start', 'argumentlist'],
+      },
+    ],
+    authorNote: 'Detects dynamic command injection in ProcessStartInfo construction.',
+  },
 ];

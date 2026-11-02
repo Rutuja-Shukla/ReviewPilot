@@ -50,6 +50,17 @@ export interface ReviewContext {
   languageContext?: string;
 }
 
+export function clampFindingCoordinates(
+  rawStart: number,
+  rawEnd: number,
+  totalLines: number
+): { startLine: number; endLine: number } {
+  const boundedTotal = Math.max(1, totalLines);
+  const start = Math.max(1, Math.min(rawStart, boundedTotal));
+  const end = Math.max(start, Math.min(rawEnd, boundedTotal));
+  return { startLine: start, endLine: end };
+}
+
 export async function analyzeCodeWithGemini(ctx: ReviewContext): Promise<{
   summary: string;
   findings: ReviewFinding[];
@@ -167,8 +178,7 @@ Return your review as a JSON object with this exact structure:
       // Validate and clamp line numbers to real source boundaries
       const rawStart = typeof sanitized.startLine === 'number' ? sanitized.startLine : 1;
       const rawEnd = typeof sanitized.endLine === 'number' ? sanitized.endLine : rawStart;
-      const startLine = Math.max(1, Math.min(rawStart, totalLines));
-      const endLine = Math.max(startLine, Math.min(rawEnd, totalLines));
+      const { startLine, endLine } = clampFindingCoordinates(rawStart, rawEnd, totalLines);
 
       // Sanitize file path from model output
       const filePath = sanitizeFilePath(sanitized.filePath || cleanFileName, cleanFileName);
